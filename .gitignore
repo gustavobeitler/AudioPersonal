@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.pdb
+*.log
+release/
+artifacts/
+AudioPersonal-*.zip

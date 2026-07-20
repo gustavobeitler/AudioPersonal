@@ -1,0 +1,49 @@
+name: Compilar y probar
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v4
+
+      - name: Preparar .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Compilar Audio Personal
+        run: dotnet build AudioPersonal.csproj --configuration Release --property:Platform=x64
+
+      - name: Ejecutar pruebas de voz
+        shell: pwsh
+        run: |
+          dotnet run --project tests/VoiceLogicTest/VoiceLogicTest.csproj --configuration Release -- "${{ github.workspace }}\bin\x64\Release\net48\AudioPersonal.exe"
+
+      - name: Preparar paquete verificable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item bin\x64\Release\net48\AudioPersonal.exe release\
+          Copy-Item bin\x64\Release\net48\AudioPersonal.exe.config release\
+          Copy-Item bin\x64\Release\net48\NAudio.dll release\
+          Copy-Item README.md,LICENSE,THIRD-PARTY-NOTICES.md release\
+          Compress-Archive -Path release\* -DestinationPath AudioPersonal-${{ github.ref_name }}-unsigned.zip -Force
+
+      - name: Publicar artefacto de compilación
+        uses: actions/upload-artifact@v4
+        with:
+          name: AudioPersonal-${{ github.ref_name }}-unsigned
+          path: AudioPersonal-${{ github.ref_name }}-unsigned.zip
+          if-no-files-found: error
