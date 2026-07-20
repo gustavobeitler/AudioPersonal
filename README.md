@@ -33,9 +33,15 @@ El catálogo musical, la configuración y los modelos de reconocimiento permanec
 
 También existe un flujo reproducible en GitHub Actions. Cada cambio compila la aplicación y ejecuta las pruebas automáticas de reconocimiento e interpretación de órdenes.
 
-## Firma para Windows
+## Política de firma de código (Code signing policy)
 
-El proyecto está preparado para solicitar la firma gratuita de SignPath Foundation. Las versiones destinadas a usuarios finales se publicarán únicamente después de incorporar la firma Authenticode al ejecutable y sus componentes ejecutables.
+Firma de código gratuita proporcionada por [SignPath.io](https://signpath.io/), certificado de [SignPath Foundation](https://signpath.org/).
+
+- Responsable, mantenedor y revisor: [Gustavo Beitler](https://github.com/gustavobeitler).
+- Aprobador de solicitudes de firma: [Gustavo Beitler](https://github.com/gustavobeitler).
+- Las versiones destinadas a usuarios finales se publicarán únicamente después de incorporar una firma Authenticode válida al ejecutable.
+- Los binarios firmados deben proceder exclusivamente de la compilación automática y pública de este repositorio.
+- Audio Personal no transfiere información a otros sistemas conectados a una red salvo cuando el usuario solicita o autoriza expresamente una operación, como descargar los modelos de reconocimiento de voz desde sus fuentes oficiales.
 
 ## Licencia
 
