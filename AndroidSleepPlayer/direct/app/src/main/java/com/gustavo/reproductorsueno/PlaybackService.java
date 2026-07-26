@@ -10,6 +10,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
@@ -32,21 +34,30 @@ public class PlaybackService extends Service {
     public static final String ACTION_NEXT = "com.gustavo.reproductorsueno.NEXT";
     public static final String ACTION_PREVIOUS = "com.gustavo.reproductorsueno.PREVIOUS";
     public static final String ACTION_SETTINGS = "com.gustavo.reproductorsueno.SETTINGS";
+    public static final String ACTION_PLAY_NEXT = "com.gustavo.reproductorsueno.PLAY_NEXT";
     public static final String BROADCAST_STATE = "com.gustavo.reproductorsueno.STATE";
 
     public static final String EXTRA_URIS = "uris";
     public static final String EXTRA_NAMES = "names";
     public static final String EXTRA_INDEX = "index";
     public static final String EXTRA_ATTENUATION_DB = "attenuation_db";
-    public static final String EXTRA_PROFILE = "profile";
     public static final String EXTRA_SHUFFLE = "shuffle";
     public static final String EXTRA_NIGHT_MODE = "night_mode";
     public static final String EXTRA_FM_PROCESSOR = "fm_processor";
+    public static final String EXTRA_PROFILE_GAINS = "profile_gains";
+    public static final String EXTRA_PROFILE_PREAMP_DB = "profile_preamp_db";
+    public static final String EXTRA_PROFILE_NAME = "profile_name";
+    public static final String EXTRA_EXPECT_HEADPHONES = "expect_headphones";
+    public static final String EXTRA_NEXT_URI = "next_uri";
+    public static final String EXTRA_NEXT_NAME = "next_name";
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_PLAYING = "playing";
+    public static final String EXTRA_MESSAGE = "message";
+    public static final String EXTRA_MISSING_URI = "missing_uri";
 
     private static final String CHANNEL_ID = "radioenlace_player";
     private static final int NOTIFICATION_ID = 1040;
+    private static final int[] PROFILE_BANDS = new int[]{60, 230, 910, 3600, 14000};
 
     private final ArrayList<String> uris = new ArrayList<>();
     private final ArrayList<String> names = new ArrayList<>();
@@ -59,18 +70,28 @@ public class PlaybackService extends Service {
     private DynamicsProcessing dynamicsProcessing;
     private AudioManager audioManager;
     private AudioFocusRequest focusRequest;
+    private AudioDeviceCallback deviceCallback;
+
     private int currentIndex = 0;
     private int attenuationDb = -40;
-    private boolean sunvitoProfile = true;
     private boolean shuffle = false;
     private boolean nightMode = true;
     private boolean fmProcessor = false;
+    private boolean expectHeadphones = false;
+    private String profileName = "Perfil estándar";
+    private float[] profileGains = new float[]{0f, 0f, 0f, 0f, 0f};
+    private float profilePreampDb = 0f;
+    private String playNextUri;
+    private String playNextName;
     private int fadeGeneration = 0;
+    private int consecutiveErrors = 0;
 
     private final BroadcastReceiver noisyReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) pausePlayback();
+            if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
+                pauseForDisconnectedHeadphones();
+            }
         }
     };
 
@@ -80,6 +101,7 @@ public class PlaybackService extends Service {
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         createNotificationChannel();
         registerReceiver(noisyReceiver, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
+        registerDeviceCallback();
     }
 
     @Override
@@ -90,15 +112,22 @@ public class PlaybackService extends Service {
 
         String action = intent.getAction();
         if (ACTION_PLAY_INDEX.equals(action)) {
+            if (!checkExpectedOutput()) return START_STICKY;
             startTrack(intent.getIntExtra(EXTRA_INDEX, 0));
         } else if (ACTION_TOGGLE.equals(action)) {
+            if (!checkExpectedOutput()) return START_STICKY;
             togglePlayback();
         } else if (ACTION_NEXT.equals(action)) {
+            if (!checkExpectedOutput()) return START_STICKY;
             nextTrack();
         } else if (ACTION_PREVIOUS.equals(action)) {
+            if (!checkExpectedOutput()) return START_STICKY;
             previousTrack();
         } else if (ACTION_SETTINGS.equals(action)) {
             applyCurrentSettings(true);
+        } else if (ACTION_PLAY_NEXT.equals(action)) {
+            playNextUri = intent.getStringExtra(EXTRA_NEXT_URI);
+            playNextName = intent.getStringExtra(EXTRA_NEXT_NAME);
         }
         return START_STICKY;
     }
@@ -120,10 +149,37 @@ public class PlaybackService extends Service {
             attenuationDb = Math.max(-60, Math.min(0,
                     intent.getIntExtra(EXTRA_ATTENUATION_DB, nightMode ? -40 : -8)));
         }
-        if (intent.hasExtra(EXTRA_PROFILE)) sunvitoProfile = intent.getBooleanExtra(EXTRA_PROFILE, true);
-        if (intent.hasExtra(EXTRA_SHUFFLE)) shuffle = intent.getBooleanExtra(EXTRA_SHUFFLE, false);
-        if (intent.hasExtra(EXTRA_NIGHT_MODE)) nightMode = intent.getBooleanExtra(EXTRA_NIGHT_MODE, true);
-        if (intent.hasExtra(EXTRA_FM_PROCESSOR)) fmProcessor = intent.getBooleanExtra(EXTRA_FM_PROCESSOR, false);
+        if (intent.hasExtra(EXTRA_SHUFFLE)) {
+            shuffle = intent.getBooleanExtra(EXTRA_SHUFFLE, false);
+        }
+        if (intent.hasExtra(EXTRA_NIGHT_MODE)) {
+            nightMode = intent.getBooleanExtra(EXTRA_NIGHT_MODE, true);
+        }
+        if (intent.hasExtra(EXTRA_FM_PROCESSOR)) {
+            fmProcessor = intent.getBooleanExtra(EXTRA_FM_PROCESSOR, false);
+        }
+        if (intent.hasExtra(EXTRA_PROFILE_GAINS)) {
+            float[] incoming = intent.getFloatArrayExtra(EXTRA_PROFILE_GAINS);
+            if (incoming != null && incoming.length >= 5) profileGains = incoming.clone();
+        }
+        if (intent.hasExtra(EXTRA_PROFILE_PREAMP_DB)) {
+            profilePreampDb = Math.max(-12f, Math.min(0f,
+                    intent.getFloatExtra(EXTRA_PROFILE_PREAMP_DB, 0f)));
+        }
+        if (intent.hasExtra(EXTRA_PROFILE_NAME)) {
+            profileName = intent.getStringExtra(EXTRA_PROFILE_NAME);
+            if (profileName == null || profileName.isEmpty()) profileName = "Perfil estándar";
+        }
+        if (intent.hasExtra(EXTRA_EXPECT_HEADPHONES)) {
+            expectHeadphones = intent.getBooleanExtra(EXTRA_EXPECT_HEADPHONES, false);
+        }
+    }
+
+    private boolean checkExpectedOutput() {
+        if (!expectHeadphones) return true;
+        if (hasHeadphoneOutput()) return true;
+        pauseForDisconnectedHeadphones();
+        return false;
     }
 
     private void togglePlayback() {
@@ -132,22 +188,28 @@ public class PlaybackService extends Service {
             return;
         }
         if (player.isPlaying()) {
-            pausePlayback();
+            pausePlayback(null);
         } else {
             requestAudioFocus();
             player.start();
             fadeToTarget(800);
             startForeground(NOTIFICATION_ID, buildNotification(true));
-            broadcastState(true);
+            broadcastState(true, null, null);
         }
     }
 
-    private void pausePlayback() {
-        if (player != null && player.isPlaying()) player.pause();
+    private void pauseForDisconnectedHeadphones() {
+        pausePlayback("Auriculares desconectados. Reproducción pausada.");
+    }
+
+    private void pausePlayback(String message) {
+        if (player != null && player.isPlaying()) {
+            try { player.pause(); } catch (Exception ignored) { }
+        }
         if (player != null) {
             startForeground(NOTIFICATION_ID, buildNotification(false));
-            broadcastState(false);
         }
+        broadcastState(false, message, null);
     }
 
     private void startTrack(int index) {
@@ -156,6 +218,7 @@ public class PlaybackService extends Service {
         currentIndex = index;
         releasePlayer();
 
+        String uri = uris.get(currentIndex);
         try {
             player = new MediaPlayer();
             player.setAudioAttributes(new AudioAttributes.Builder()
@@ -163,29 +226,59 @@ public class PlaybackService extends Service {
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build());
             player.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK);
-            player.setDataSource(this, Uri.parse(uris.get(currentIndex)));
+            player.setDataSource(this, Uri.parse(uri));
             player.setOnPreparedListener(mp -> {
+                if (!checkExpectedOutput()) return;
+                consecutiveErrors = 0;
                 attachAudioProcessing();
                 requestAudioFocus();
                 mp.setVolume(0f, 0f);
                 mp.start();
                 fadeToTarget(nightMode ? 3000 : 1400);
                 startForeground(NOTIFICATION_ID, buildNotification(true));
-                broadcastState(true);
+                broadcastState(true, null, null);
             });
             player.setOnCompletionListener(mp -> nextTrack());
             player.setOnErrorListener((mp, what, extra) -> {
-                handler.postDelayed(this::nextTrack, 400);
+                handleTrackError(uri);
                 return true;
             });
             player.prepareAsync();
         } catch (Exception error) {
-            handler.postDelayed(this::nextTrack, 400);
+            handleTrackError(uri);
         }
+    }
+
+    private void handleTrackError(String missingUri) {
+        consecutiveErrors++;
+        String message = "Archivo no disponible. Se salta a la siguiente canción.";
+        broadcastState(false, message, missingUri);
+        if (uris.isEmpty() || consecutiveErrors >= uris.size()) {
+            releasePlayer();
+            broadcastState(false, "No quedan archivos disponibles en la lista.", missingUri);
+            return;
+        }
+        handler.postDelayed(this::nextTrack, 350);
     }
 
     private void nextTrack() {
         if (uris.isEmpty()) return;
+        if (playNextUri != null && !playNextUri.isEmpty()) {
+            String uri = playNextUri;
+            String name = playNextName == null || playNextName.isEmpty() ? "Pista siguiente" : playNextName;
+            playNextUri = null;
+            playNextName = null;
+            int existing = uris.indexOf(uri);
+            if (existing < 0) {
+                int insert = Math.min(currentIndex + 1, uris.size());
+                uris.add(insert, uri);
+                names.add(insert, name);
+                existing = insert;
+            }
+            startTrack(existing);
+            return;
+        }
+
         int next;
         if (shuffle && uris.size() > 1) {
             do { next = random.nextInt(uris.size()); } while (next == currentIndex);
@@ -202,20 +295,26 @@ public class PlaybackService extends Service {
     }
 
     private void applyCurrentSettings(boolean smooth) {
-        if (player == null) return;
+        if (player == null) {
+            broadcastState(false, null, null);
+            return;
+        }
+        if (expectHeadphones && !hasHeadphoneOutput()) {
+            pauseForDisconnectedHeadphones();
+            return;
+        }
         attachAudioProcessing();
         if (smooth && player.isPlaying()) fadeToTarget(900);
         else applyVolumeImmediately();
         startForeground(NOTIFICATION_ID, buildNotification(player.isPlaying()));
-        broadcastState(player.isPlaying());
+        broadcastState(player.isPlaying(), null, null);
     }
 
     private void attachAudioProcessing() {
         releaseAudioEffects();
         if (player == null) return;
         int sessionId = player.getAudioSessionId();
-
-        if (sunvitoProfile || fmProcessor) attachEqualizer(sessionId);
+        attachEqualizer(sessionId);
         if (fmProcessor) {
             attachFmDynamics(sessionId);
             attachFmLoudness(sessionId);
@@ -229,7 +328,8 @@ public class PlaybackService extends Service {
             short bandCount = equalizer.getNumberOfBands();
             for (short band = 0; band < bandCount; band++) {
                 int centerHz = equalizer.getCenterFreq(band) / 1000;
-                int requested = requestedEqMilliBel(centerHz);
+                float requestedDb = interpolatedProfileGain(centerHz) + fmEqGain(centerHz);
+                int requested = Math.round(requestedDb * 100f);
                 short safe = (short) Math.max(range[0], Math.min(range[1], requested));
                 equalizer.setBandLevel(band, safe);
             }
@@ -239,31 +339,27 @@ public class PlaybackService extends Service {
         }
     }
 
-    private int requestedEqMilliBel(int centerHz) {
-        int value = 0;
-        if (sunvitoProfile) {
-            if (nightMode) {
-                if (centerHz < 120) value -= 900;
-                else if (centerHz < 500) value -= 1200;
-                else if (centerHz < 2000) value -= 200;
-                else if (centerHz < 6000) value -= 1500;
-                else value -= 2200;
-            } else {
-                if (centerHz < 120) value += 300;
-                else if (centerHz < 500) value -= 400;
-                else if (centerHz < 2000) value += 100;
-                else if (centerHz < 6000) value -= 500;
-                else value -= 800;
+    private float interpolatedProfileGain(int centerHz) {
+        if (centerHz <= PROFILE_BANDS[0]) return profileGains[0];
+        for (int i = 1; i < PROFILE_BANDS.length; i++) {
+            if (centerHz <= PROFILE_BANDS[i]) {
+                double logF = Math.log(Math.max(1, centerHz));
+                double logL = Math.log(PROFILE_BANDS[i - 1]);
+                double logR = Math.log(PROFILE_BANDS[i]);
+                float t = (float) ((logF - logL) / Math.max(0.0001, logR - logL));
+                return profileGains[i - 1] + (profileGains[i] - profileGains[i - 1]) * t;
             }
         }
-        if (fmProcessor) {
-            if (centerHz < 120) value += nightMode ? 500 : 1100;
-            else if (centerHz < 500) value += nightMode ? 100 : 300;
-            else if (centerHz < 2000) value += nightMode ? 200 : 600;
-            else if (centerHz < 6000) value += nightMode ? 250 : 900;
-            else value += nightMode ? -100 : 350;
-        }
-        return value;
+        return profileGains[profileGains.length - 1];
+    }
+
+    private float fmEqGain(int centerHz) {
+        if (!fmProcessor) return 0f;
+        if (centerHz < 120) return nightMode ? 0.5f : 1.1f;
+        if (centerHz < 500) return nightMode ? 0.1f : 0.3f;
+        if (centerHz < 2000) return nightMode ? 0.2f : 0.6f;
+        if (centerHz < 6000) return nightMode ? 0.25f : 0.9f;
+        return nightMode ? -0.1f : 0.35f;
     }
 
     private void attachFmDynamics(int sessionId) {
@@ -321,8 +417,7 @@ public class PlaybackService extends Service {
             final int currentStep = step;
             handler.postDelayed(() -> {
                 if (generation != fadeGeneration || player == null) return;
-                float progress = currentStep / (float) steps;
-                float value = target * progress;
+                float value = target * currentStep / (float) steps;
                 try { player.setVolume(value, value); } catch (Exception ignored) { }
             }, (long) currentStep * durationMs / steps);
         }
@@ -336,15 +431,18 @@ public class PlaybackService extends Service {
     }
 
     private float targetAmplitude() {
-        int safetyHeadroom = fmProcessor ? (nightMode ? 2 : 3) : 0;
-        return (float) Math.pow(10.0, (attenuationDb - safetyHeadroom) / 20.0);
+        float safetyHeadroom = fmProcessor ? (nightMode ? 2f : 3f) : 0f;
+        float totalDb = attenuationDb + profilePreampDb - safetyHeadroom;
+        return (float) Math.pow(10.0, totalDb / 20.0);
     }
 
     private void requestAudioFocus() {
         if (audioManager == null) return;
         AudioManager.OnAudioFocusChangeListener listener = change -> {
             if (change == AudioManager.AUDIOFOCUS_LOSS
-                    || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) pausePlayback();
+                    || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                pausePlayback(null);
+            }
         };
         if (Build.VERSION.SDK_INT >= 26) {
             focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
@@ -359,6 +457,42 @@ public class PlaybackService extends Service {
             audioManager.requestAudioFocus(listener, AudioManager.STREAM_MUSIC,
                     AudioManager.AUDIOFOCUS_GAIN);
         }
+    }
+
+    private void registerDeviceCallback() {
+        if (audioManager == null || Build.VERSION.SDK_INT < 23) return;
+        deviceCallback = new AudioDeviceCallback() {
+            @Override
+            public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
+                if (!expectHeadphones) return;
+                for (AudioDeviceInfo device : removedDevices) {
+                    if (isHeadphoneType(device.getType())) {
+                        handler.postDelayed(() -> {
+                            if (!hasHeadphoneOutput()) pauseForDisconnectedHeadphones();
+                        }, 150);
+                        break;
+                    }
+                }
+            }
+        };
+        audioManager.registerAudioDeviceCallback(deviceCallback, handler);
+    }
+
+    private boolean hasHeadphoneOutput() {
+        if (audioManager == null || Build.VERSION.SDK_INT < 23) return false;
+        for (AudioDeviceInfo device : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            if (isHeadphoneType(device.getType())) return true;
+        }
+        return false;
+    }
+
+    private boolean isHeadphoneType(int type) {
+        return type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                || type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                || type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                || type == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                || type == AudioDeviceInfo.TYPE_USB_HEADSET;
     }
 
     private Notification buildNotification(boolean playing) {
@@ -380,7 +514,7 @@ public class PlaybackService extends Service {
                 .setContentIntent(open)
                 .setContentTitle(currentTitle())
                 .setContentText((nightMode ? "Nocturno" : "Normal") + "  ·  " + displayDb()
-                        + (fmProcessor ? "  ·  FM" : ""))
+                        + "  ·  " + profileName + (fmProcessor ? "  ·  FM" : ""))
                 .setOnlyAlertOnce(true)
                 .setOngoing(playing)
                 .setShowWhen(false)
@@ -400,7 +534,7 @@ public class PlaybackService extends Service {
         return (attenuationDb < 0 ? "−" + Math.abs(attenuationDb) : String.valueOf(attenuationDb)) + " dB";
     }
 
-    private void broadcastState(boolean playing) {
+    private void broadcastState(boolean playing, String message, String missingUri) {
         Intent state = new Intent(BROADCAST_STATE);
         state.setPackage(getPackageName());
         state.putExtra(EXTRA_TITLE, currentTitle());
@@ -408,6 +542,8 @@ public class PlaybackService extends Service {
         state.putExtra(EXTRA_ATTENUATION_DB, attenuationDb);
         state.putExtra(EXTRA_NIGHT_MODE, nightMode);
         state.putExtra(EXTRA_FM_PROCESSOR, fmProcessor);
+        if (message != null) state.putExtra(EXTRA_MESSAGE, message);
+        if (missingUri != null) state.putExtra(EXTRA_MISSING_URI, missingUri);
         sendBroadcast(state);
     }
 
@@ -460,6 +596,9 @@ public class PlaybackService extends Service {
     @Override
     public void onDestroy() {
         try { unregisterReceiver(noisyReceiver); } catch (Exception ignored) { }
+        if (audioManager != null && deviceCallback != null && Build.VERSION.SDK_INT >= 23) {
+            try { audioManager.unregisterAudioDeviceCallback(deviceCallback); } catch (Exception ignored) { }
+        }
         releasePlayer();
         if (Build.VERSION.SDK_INT >= 26 && focusRequest != null && audioManager != null) {
             try { audioManager.abandonAudioFocusRequest(focusRequest); } catch (Exception ignored) { }
