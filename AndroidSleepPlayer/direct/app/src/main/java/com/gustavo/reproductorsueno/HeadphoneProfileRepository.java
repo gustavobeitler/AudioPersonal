@@ -50,62 +50,57 @@ public final class HeadphoneProfileRepository {
         Handler main = new Handler(Looper.getMainLooper());
         new Thread(() -> {
             try {
-                String query = normalize((brand + " " + model).trim());
-                if (query.length() < 3) {
-                    main.post(callback::onNotFound);
-                    return;
-                }
-
-                String index = loadIndex(context);
-                Match match = findBestMatch(index, brand, model);
-                if (match == null) {
-                    main.post(callback::onNotFound);
-                    return;
-                }
-
-                String directory = match.link;
-                if (directory.startsWith("./")) directory = directory.substring(2);
-                if (directory.startsWith("results/")) directory = directory.substring("results/".length());
-                int slash = directory.lastIndexOf('/');
-                if (slash >= 0) directory = directory.substring(0, slash + 1);
-                else directory = "";
-
-                String fileName = match.name + " GraphicEQ.txt";
-                String rawUrl = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/"
-                        + encodePath(directory + fileName);
-
-                String graphic;
-                try {
-                    graphic = downloadText(rawUrl);
-                } catch (Exception first) {
-                    String readmeUrl = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/"
-                            + encodePath(directory + "README.md");
-                    graphic = downloadText(readmeUrl);
-                }
-
-                ArrayList<Point> points = parseGraphicEq(graphic);
-                if (points.size() < 3) {
-                    main.post(callback::onNotFound);
-                    return;
-                }
-
-                float[] gains = new float[TARGET_BANDS.length];
-                float maxBoost = 0f;
-                for (int i = 0; i < TARGET_BANDS.length; i++) {
-                    float value = interpolate(points, TARGET_BANDS[i]);
-                    value = Math.max(-8f, Math.min(6f, value));
-                    gains[i] = value;
-                    if (value > maxBoost) maxBoost = value;
-                }
-                float preamp = -Math.max(0f, maxBoost);
-                Result result = new Result(match.name, "AutoEq", gains, preamp);
-                main.post(() -> callback.onFound(result));
+                Result result = searchSync(context, brand, model);
+                if (result == null) main.post(callback::onNotFound);
+                else main.post(() -> callback.onFound(result));
             } catch (Exception error) {
-                String message = error.getMessage() == null ? "No se pudo consultar la base de perfiles"
+                String message = error.getMessage() == null
+                        ? "No se pudo consultar la base de perfiles"
                         : error.getMessage();
                 main.post(() -> callback.onError(message));
             }
         }, "profile-search").start();
+    }
+
+    public static Result searchSync(Context context, String brand, String model) throws Exception {
+        String query = normalize((brand + " " + model).trim());
+        if (query.length() < 3) return null;
+
+        String index = loadIndex(context);
+        Match match = findBestMatch(index, brand, model);
+        if (match == null) return null;
+
+        String directory = match.link;
+        if (directory.startsWith("./")) directory = directory.substring(2);
+        if (directory.startsWith("results/")) directory = directory.substring("results/".length());
+        int slash = directory.lastIndexOf('/');
+        directory = slash >= 0 ? directory.substring(0, slash + 1) : "";
+
+        String fileName = match.name + " GraphicEQ.txt";
+        String rawUrl = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/"
+                + encodePath(directory + fileName);
+
+        String graphic;
+        try {
+            graphic = downloadText(rawUrl);
+        } catch (Exception first) {
+            String readmeUrl = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results/"
+                    + encodePath(directory + "README.md");
+            graphic = downloadText(readmeUrl);
+        }
+
+        ArrayList<Point> points = parseGraphicEq(graphic);
+        if (points.size() < 3) return null;
+
+        float[] gains = new float[TARGET_BANDS.length];
+        float maxBoost = 0f;
+        for (int i = 0; i < TARGET_BANDS.length; i++) {
+            float value = interpolate(points, TARGET_BANDS[i]);
+            value = Math.max(-8f, Math.min(6f, value));
+            gains[i] = value;
+            if (value > maxBoost) maxBoost = value;
+        }
+        return new Result(match.name, "AutoEq", gains, -Math.max(0f, maxBoost));
     }
 
     private static String loadIndex(Context context) throws Exception {
@@ -145,12 +140,13 @@ public final class HeadphoneProfileRepository {
             while (matcher.find()) {
                 String name = matcher.group(1).trim();
                 String link = matcher.group(2).trim();
-                String n = normalize(name);
+                String normalizedName = normalize(name);
                 int score = 0;
-                if (n.equals(normalize((brand + " " + model).trim()))) score += 1000;
-                if (!normalizedBrand.isEmpty() && n.contains(normalizedBrand)) score += 100;
-                if (!normalizedModel.isEmpty() && n.contains(normalizedModel)) score += 200;
-                score -= Math.abs(n.length() - (normalizedBrand.length() + normalizedModel.length() + 1));
+                if (normalizedName.equals(normalize((brand + " " + model).trim()))) score += 1000;
+                if (!normalizedBrand.isEmpty() && normalizedName.contains(normalizedBrand)) score += 100;
+                if (!normalizedModel.isEmpty() && normalizedName.contains(normalizedModel)) score += 200;
+                score -= Math.abs(normalizedName.length()
+                        - (normalizedBrand.length() + normalizedModel.length() + 1));
                 if (score > bestScore) {
                     bestScore = score;
                     best = new Match(name, link);
@@ -198,7 +194,7 @@ public final class HeadphoneProfileRepository {
         HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
         connection.setConnectTimeout(12000);
         connection.setReadTimeout(20000);
-        connection.setRequestProperty("User-Agent", "RadioEnlaceAudio/0.3");
+        connection.setRequestProperty("User-Agent", "RadioEnlaceAudio/0.5");
         connection.setInstanceFollowRedirects(true);
         int response = connection.getResponseCode();
         if (response < 200 || response >= 300) {
