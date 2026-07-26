@@ -35,73 +35,73 @@ jobs:
           main = Path('AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java')
           text = main.read_text(encoding='utf-8')
           text = text.replace('BETA " + "0.8', 'BETA " + "0.9')
-
-          old_play = '''        if (serviceBound && playbackService != null) {
-              syncBoundService();
-              playbackService.playFromClient(currentServiceIndex, currentServicePosition);
-          } else {
-              sendPlayerCommand(PlaybackService.ACTION_PLAY, currentServiceIndex);
-          }
-  '''
-          new_play = '''        Intent playIntent = basePlayerIntent(PlaybackService.ACTION_PLAY_INDEX);
-          playIntent.putStringArrayListExtra(PlaybackService.EXTRA_URIS, new ArrayList<>(trackUris));
-          playIntent.putStringArrayListExtra(PlaybackService.EXTRA_NAMES, new ArrayList<>(trackNames));
-          playIntent.putExtra(PlaybackService.EXTRA_INDEX, currentServiceIndex);
-          playIntent.putExtra(PlaybackService.EXTRA_RESUME_POSITION, currentServicePosition);
-          startPlaybackService(playIntent);
-  '''
+          old_play = (
+              "        if (serviceBound && playbackService != null) {\n"
+              "            syncBoundService();\n"
+              "            playbackService.playFromClient(currentServiceIndex, currentServicePosition);\n"
+              "        } else {\n"
+              "            sendPlayerCommand(PlaybackService.ACTION_PLAY, currentServiceIndex);\n"
+              "        }\n"
+          )
+          new_play = (
+              "        Intent playIntent = basePlayerIntent(PlaybackService.ACTION_PLAY_INDEX);\n"
+              "        playIntent.putStringArrayListExtra(PlaybackService.EXTRA_URIS, new ArrayList<>(trackUris));\n"
+              "        playIntent.putStringArrayListExtra(PlaybackService.EXTRA_NAMES, new ArrayList<>(trackNames));\n"
+              "        playIntent.putExtra(PlaybackService.EXTRA_INDEX, currentServiceIndex);\n"
+              "        playIntent.putExtra(PlaybackService.EXTRA_RESUME_POSITION, currentServicePosition);\n"
+              "        startPlaybackService(playIntent);\n"
+          )
           if old_play not in text:
               raise SystemExit('No se encontró el bloque de Play')
-          text = text.replace(old_play, new_play, 1)
-          main.write_text(text, encoding='utf-8')
+          main.write_text(text.replace(old_play, new_play, 1), encoding='utf-8')
 
           service = Path('AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java')
           text = service.read_text(encoding='utf-8')
-
-          old_focus_listener = '''    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> {
-          if (change == AudioManager.AUDIOFOCUS_LOSS
-                  || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-              pausePlayback(null);
-          }
-      };
-  '''
-          new_focus_listener = '''    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> { };
-  '''
-          if old_focus_listener not in text:
+          old_listener = (
+              "    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> {\n"
+              "        if (change == AudioManager.AUDIOFOCUS_LOSS\n"
+              "                || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {\n"
+              "            pausePlayback(null);\n"
+              "        }\n"
+              "    };\n"
+          )
+          new_listener = "    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> { };\n"
+          if old_listener not in text:
               raise SystemExit('No se encontró el listener de foco')
-          text = text.replace(old_focus_listener, new_focus_listener, 1)
-
-          old_focus_method = '''    private void requestAudioFocus() {
-          if (audioManager == null) return;
-          if (Build.VERSION.SDK_INT >= 26) {
-              if (focusRequest != null) audioManager.requestAudioFocus(focusRequest);
-          } else {
-              audioManager.requestAudioFocus(focusChangeListener, AudioManager.STREAM_MUSIC,
-                      AudioManager.AUDIOFOCUS_GAIN);
-          }
-      }
-  '''
-          new_focus_method = '''    private void requestAudioFocus() {
-          // Sin foco exclusivo: la grabación de pantalla no puede devolver el reproductor a pausa.
-      }
-  '''
-          if old_focus_method not in text:
+          text = text.replace(old_listener, new_listener, 1)
+          old_focus = (
+              "    private void requestAudioFocus() {\n"
+              "        if (audioManager == null) return;\n"
+              "        if (Build.VERSION.SDK_INT >= 26) {\n"
+              "            if (focusRequest != null) audioManager.requestAudioFocus(focusRequest);\n"
+              "        } else {\n"
+              "            audioManager.requestAudioFocus(focusChangeListener, AudioManager.STREAM_MUSIC,\n"
+              "                    AudioManager.AUDIOFOCUS_GAIN);\n"
+              "        }\n"
+              "    }\n"
+          )
+          new_focus = (
+              "    private void requestAudioFocus() {\n"
+              "        // La grabación de pantalla no puede devolver el reproductor a pausa.\n"
+              "    }\n"
+          )
+          if old_focus not in text:
               raise SystemExit('No se encontró el método de foco')
-          text = text.replace(old_focus_method, new_focus_method, 1)
-
-          old_action = '''        if (ACTION_PLAY_INDEX.equals(action)) {
-              if (checkExpectedOutput() && !loading) startTrack(intent.getIntExtra(EXTRA_INDEX, 0));
-  '''
-          new_action = '''        if (ACTION_PLAY_INDEX.equals(action)) {
-              if (checkExpectedOutput() && !loading) {
-                  int resume = intent.getIntExtra(EXTRA_RESUME_POSITION, 0);
-                  startTrack(intent.getIntExtra(EXTRA_INDEX, 0), resume);
-              }
-  '''
+          text = text.replace(old_focus, new_focus, 1)
+          old_action = (
+              "        if (ACTION_PLAY_INDEX.equals(action)) {\n"
+              "            if (checkExpectedOutput() && !loading) startTrack(intent.getIntExtra(EXTRA_INDEX, 0));\n"
+          )
+          new_action = (
+              "        if (ACTION_PLAY_INDEX.equals(action)) {\n"
+              "            if (checkExpectedOutput() && !loading) {\n"
+              "                int resume = intent.getIntExtra(EXTRA_RESUME_POSITION, 0);\n"
+              "                startTrack(intent.getIntExtra(EXTRA_INDEX, 0), resume);\n"
+              "            }\n"
+          )
           if old_action not in text:
               raise SystemExit('No se encontró PLAY_INDEX')
-          text = text.replace(old_action, new_action, 1)
-          service.write_text(text, encoding='utf-8')
+          service.write_text(text.replace(old_action, new_action, 1), encoding='utf-8')
           PY
 
       - name: Verify requested fixes
