@@ -1,4 +1,4 @@
-name: Build Android Player Beta 0.8
+name: Build Android Player Beta 0.9
 
 on:
   pull_request:
@@ -19,41 +19,100 @@ jobs:
           ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
-      - name: Apply only the two playback fixes
+      - name: Apply only Play and volume-button fixes
         shell: bash
         run: |
-          cat > /tmp/beta08.patch.gz.b64 <<'PATCH_B64'
-          H4sICNFlZmoAA2JldGEwOC5wYXRjaADFV81y4jgQPm+eQpPDxBTGgIEAQzEVj3FSrgWbsk12c6IUWyHaMTYjy8xQOznMa+yL7H3z
-          YiuZH9v8heymanQALKm7P3V//VmUSiWgBB4JsWf7CM2GPlwgUvYwQS4tw9msHBG3PIU4KP8B57DshtPyJI4onIdlgmYk9GKXhiSK
-          URCWufE9dD/biMyxiyRu8YtckS9LlWZJvgTV9odG7UOtLsmtVrveqNbboFhh46xYLP4EFM1KnaOoXa5QXF2BUqstskf2Wa2Bq6sz
-          wMeM4DmkCCixh8MBDOAEEQAzD509+65DN44s9CVGEQUPmYd9m3uII1Wh73PgwMs9ds6KZ8WsyQMOoJ9DI5lBGlR9hMEE9XFEUcCA
-          PuyZ6wI3mQClj+DPpXM+8AMQVgvdbj6AMurp5rWpjuxx37Tt1GY9vn8Hp5mOHUsxbF0znEI2dnJAGEdoXT4hiH2/0El3PC1/Pm0l
-          0H6EBHlDgh4QQYGLIsB4QRGfiNjW/GYcUODGhG2keuChb52k6FW5yaterdXFamNT9itzjgjBHgKz+N7HLpgzeoIwUAlirgSOfoM8
-          imfspOlaJ13KEoUlXsjmpgAmiNoLVpXpiq1Ckq2xrVm3uqplj8+Lk/P1rgt4isD79+BTjH1PutUsWzcNye79OtYNB3zsAvlyJ8lZ
-          LjI8Afq6S1gpcYiIcKiQN4puFHZJwIcUIZqYKZQSfB9TFAmbIOncJsQBN1l3o4jFF7YdjGzlRhsPtJ6unOBDDQPGfeosZrueVNNw
-          GB/Hzt2QORzZuvqSw3sOXigcScHhjhT2dOQhR6s4uS7YrKY8Z3XkRNruBOE8I47jRB3PRTAwe9p4aOm3iqNlieom3DVCih+wCylm
-          bGYYA+Tn6EzQhGMmFnIRZg0iBCGOFusnMeGTnqT6Gvt0h0Kqwxg6XpL8k6aaA924GRumbt8VCstmbLSrolwFxctKU6zKSTfmezhp
-          Q7IkaprjfD/uNEt32SwFZkhjEnTOSuutp+qov188N37WYU8U0JzdevwnEd2rmhv3T518Vl6QihysN5SKvcd9vVTsdZN1d4JUvOjj
-          tVJx3OFGKg6m4IhU+Bt92G+90Yfccpb50m6nZMuaowpAfoResl5DEvMEtR1LUwbLlIi7aI+yo5NXP07THPXerZv3dQcrbh1s60V4
-          irN8OY4eea+An3rslao/HdC6peTmb4mJ4JXe8vo+YNsUl+I5poufdHc/AUJDltptuV2vNxrZi3ut0hKboLj8Wl/h+OjjAEHSh4sw
-          puARQQ8Hk5WYZZcE+oij7ItutTVpUIKZHiSvRCFrw2XU0VWlv88Oet4tRl8Fir5R4dzShpbZG6mOaYGeBgbPfzHSKOxtLMsiUMeO
-          9rsjAkpiVBDBFFL38TcCZ0Ih254HHCuMVJrRV1QNJAQD4J+/AfikOQo4B0VwXpGaLEy1ysOod4pxIEzxf4dpnRJmkyYShnQTYxVz
-          Z3O6nWV7FlM7nk4hWbDyLVHZSl/vKQyQYw6ef/BScFRDzbrW+0CznecfRk+xOK4kyzeWpq2BdU7onURdpQmBno/eqBeOuzzA7Wpb
-          bLG/J/wzy2zmz1/d1HQPXLDGklaNJW031kVqNcWB7X0GciudopDw6yObrTVSvrHrXMQvgSH7B9TcmTbgFIELRq6LlDpZi9bO9Nqi
-          dbEldklO+Ns2Yor2Lz/MfVuREAAA
-          PATCH_B64
-          tr -d '[:space:]' < /tmp/beta08.patch.gz.b64 | base64 --decode | gzip -dc > /tmp/beta08.patch
-          echo "07d1903c4a175b5b09e250ac46f2f317e023f66b1de2e087cda93eb9ccda96dd  /tmp/beta08.patch" | sha256sum -c -
-          patch -p0 < /tmp/beta08.patch
-          rm -f /tmp/beta08.patch /tmp/beta08.patch.gz.b64
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gradle = Path('AndroidSleepPlayer/direct/app/build.gradle')
+          text = gradle.read_text(encoding='utf-8')
+          text = text.replace('versionCode 8', 'versionCode 9')
+          text = text.replace("versionName '0.8'", "versionName '0.9'")
+          gradle.write_text(text, encoding='utf-8')
+
+          main = Path('AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java')
+          text = main.read_text(encoding='utf-8')
+          text = text.replace('BETA " + "0.8', 'BETA " + "0.9')
+
+          old_play = '''        if (serviceBound && playbackService != null) {
+              syncBoundService();
+              playbackService.playFromClient(currentServiceIndex, currentServicePosition);
+          } else {
+              sendPlayerCommand(PlaybackService.ACTION_PLAY, currentServiceIndex);
+          }
+  '''
+          new_play = '''        Intent playIntent = basePlayerIntent(PlaybackService.ACTION_PLAY_INDEX);
+          playIntent.putStringArrayListExtra(PlaybackService.EXTRA_URIS, new ArrayList<>(trackUris));
+          playIntent.putStringArrayListExtra(PlaybackService.EXTRA_NAMES, new ArrayList<>(trackNames));
+          playIntent.putExtra(PlaybackService.EXTRA_INDEX, currentServiceIndex);
+          playIntent.putExtra(PlaybackService.EXTRA_RESUME_POSITION, currentServicePosition);
+          startPlaybackService(playIntent);
+  '''
+          if old_play not in text:
+              raise SystemExit('No se encontró el bloque de Play que debía sustituirse')
+          text = text.replace(old_play, new_play, 1)
+          main.write_text(text, encoding='utf-8')
+
+          service = Path('AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java')
+          text = service.read_text(encoding='utf-8')
+
+          old_focus_listener = '''    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> {
+          if (change == AudioManager.AUDIOFOCUS_LOSS
+                  || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+              pausePlayback(null);
+          }
+      };
+  '''
+          new_focus_listener = '''    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> { };
+  '''
+          if old_focus_listener not in text:
+              raise SystemExit('No se encontró el listener de foco de audio')
+          text = text.replace(old_focus_listener, new_focus_listener, 1)
+
+          old_focus_method = '''    private void requestAudioFocus() {
+          if (audioManager == null) return;
+          if (Build.VERSION.SDK_INT >= 26) {
+              if (focusRequest != null) audioManager.requestAudioFocus(focusRequest);
+          } else {
+              audioManager.requestAudioFocus(focusChangeListener, AudioManager.STREAM_MUSIC,
+                      AudioManager.AUDIOFOCUS_GAIN);
+          }
+      }
+  '''
+          new_focus_method = '''    private void requestAudioFocus() {
+          // No se solicita foco exclusivo: el grabador de pantalla y otras aplicaciones
+          // no deben devolver este reproductor inmediatamente al estado de pausa.
+      }
+  '''
+          if old_focus_method not in text:
+              raise SystemExit('No se encontró el método de foco de audio')
+          text = text.replace(old_focus_method, new_focus_method, 1)
+
+          old_action = '''        if (ACTION_PLAY_INDEX.equals(action)) {
+              if (checkExpectedOutput() && !loading) startTrack(intent.getIntExtra(EXTRA_INDEX, 0));
+  '''
+          new_action = '''        if (ACTION_PLAY_INDEX.equals(action)) {
+              if (checkExpectedOutput() && !loading) {
+                  int resume = intent.getIntExtra(EXTRA_RESUME_POSITION, 0);
+                  startTrack(intent.getIntExtra(EXTRA_INDEX, 0), resume);
+              }
+  '''
+          if old_action not in text:
+              raise SystemExit('No se encontró la acción PLAY_INDEX')
+          text = text.replace(old_action, new_action, 1)
+          service.write_text(text, encoding='utf-8')
+          PY
 
       - name: Verify only requested changes
         run: |
-          grep -q "versionCode 8" AndroidSleepPlayer/direct/app/build.gradle
-          grep -q "versionName '0.8'" AndroidSleepPlayer/direct/app/build.gradle
-          grep -q "focusChangeListener" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
-          grep -q "if (focusRequest != null) audioManager.requestAudioFocus(focusRequest);" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
-          grep -q 'BETA " + "0.8' AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
+          grep -q "versionCode 9" AndroidSleepPlayer/direct/app/build.gradle
+          grep -q "versionName '0.9'" AndroidSleepPlayer/direct/app/build.gradle
+          grep -q 'BETA " + "0.9' AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
+          grep -q "Intent playIntent = basePlayerIntent(PlaybackService.ACTION_PLAY_INDEX);" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
+          grep -q "change -> { };" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
+          grep -q "startTrack(intent.getIntExtra(EXTRA_INDEX, 0), resume);" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
+          grep -q "changeAppVolumeBy(keyCode == KeyEvent.KEYCODE_VOLUME_UP ? 1 : -1);" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
 
       - name: Java 17
         uses: actions/setup-java@v4
@@ -81,9 +140,9 @@ jobs:
         working-directory: AndroidSleepPlayer/direct
         run: |
           set -o pipefail
-          gradle clean :app:assembleDebug --stacktrace 2>&1 | tee build-beta-0.8.log
+          gradle clean :app:assembleDebug --stacktrace 2>&1 | tee build-beta-0.9.log
 
-      - name: Save Beta 0.8 source
+      - name: Save Beta 0.9 source
         shell: bash
         run: |
           git config user.name "RadioEnlace Build"
@@ -92,7 +151,7 @@ jobs:
                   AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java \
                   AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
           if ! git diff --cached --quiet; then
-            git commit -m "Beta 0.8: corregir Play inicial y reanudación [skip ci]"
+            git commit -m "Beta 0.9: Play directo sin pausa por foco de audio [skip ci]"
             BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
             git push origin "HEAD:$BRANCH"
           fi
@@ -101,14 +160,14 @@ jobs:
         run: |
           rm -rf AndroidSleepPlayer/dist
           mkdir -p AndroidSleepPlayer/dist
-          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.8.apk
+          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.9.apk
 
       - name: Verify APK integrity
-        run: unzip -t AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.8.apk
+        run: unzip -t AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.9.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ReproductorMusica-Beta-0.8
-          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.8.apk
+          name: ReproductorMusica-Beta-0.9
+          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.9.apk
           if-no-files-found: error
