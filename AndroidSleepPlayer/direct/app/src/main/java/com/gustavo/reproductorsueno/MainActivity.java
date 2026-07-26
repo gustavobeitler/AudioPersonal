@@ -308,7 +308,7 @@ public class MainActivity extends Activity {
         LinearLayout heading = new LinearLayout(this);
         heading.setOrientation(LinearLayout.VERTICAL);
         heading.addView(text("REPRODUCTOR DE MÚSICA", 22, C_TEXT, true), matchWrap());
-        heading.addView(text("RADIOENLACE AUDIO  ·  BETA " + "0.8", 11, C_CYAN, true), matchWrap());
+        heading.addView(text("RADIOENLACE AUDIO  ·  BETA " + "0.9", 11, C_CYAN, true), matchWrap());
         root.addView(heading, matchWrap());
 
         outputSummary = text("SALIDA AUTOMÁTICA · PERFIL ESTÁNDAR", 12, C_GREEN, true);
@@ -760,12 +760,12 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "No se encontró música para reproducir", Toast.LENGTH_LONG).show();
             return;
         }
-        if (serviceBound && playbackService != null) {
-            syncBoundService();
-            playbackService.playFromClient(currentServiceIndex, currentServicePosition);
-        } else {
-            sendPlayerCommand(PlaybackService.ACTION_PLAY, currentServiceIndex);
-        }
+        Intent playIntent = basePlayerIntent(PlaybackService.ACTION_PLAY_INDEX);
+        playIntent.putStringArrayListExtra(PlaybackService.EXTRA_URIS, new ArrayList<>(trackUris));
+        playIntent.putStringArrayListExtra(PlaybackService.EXTRA_NAMES, new ArrayList<>(trackNames));
+        playIntent.putExtra(PlaybackService.EXTRA_INDEX, currentServiceIndex);
+        playIntent.putExtra(PlaybackService.EXTRA_RESUME_POSITION, currentServicePosition);
+        startPlaybackService(playIntent);
     }
 
     private void queryPlaybackState() {

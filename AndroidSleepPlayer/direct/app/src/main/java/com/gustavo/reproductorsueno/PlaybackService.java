@@ -90,12 +90,7 @@ public class PlaybackService extends Service {
     private AudioFocusRequest focusRequest;
     private AudioDeviceCallback deviceCallback;
 
-    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> {
-        if (change == AudioManager.AUDIOFOCUS_LOSS
-                || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-            pausePlayback(null);
-        }
-    };
+    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> { };
     private SharedPreferences statePrefs;
 
     private int currentIndex;
@@ -236,7 +231,10 @@ public class PlaybackService extends Service {
         }
 
         if (ACTION_PLAY_INDEX.equals(action)) {
-            if (checkExpectedOutput() && !loading) startTrack(intent.getIntExtra(EXTRA_INDEX, 0));
+            if (checkExpectedOutput() && !loading) {
+                int resume = intent.getIntExtra(EXTRA_RESUME_POSITION, 0);
+                startTrack(intent.getIntExtra(EXTRA_INDEX, 0), resume);
+            }
         } else if (ACTION_PLAY.equals(action)) {
             if (checkExpectedOutput()) {
                 int resume = intent.getIntExtra(EXTRA_RESUME_POSITION,
@@ -606,13 +604,7 @@ public class PlaybackService extends Service {
     }
 
     private void requestAudioFocus() {
-        if (audioManager == null) return;
-        if (Build.VERSION.SDK_INT >= 26) {
-            if (focusRequest != null) audioManager.requestAudioFocus(focusRequest);
-        } else {
-            audioManager.requestAudioFocus(focusChangeListener, AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN);
-        }
+        // La grabación de pantalla no puede devolver el reproductor a pausa.
     }
 
     private void registerDeviceCallback() {
