@@ -6,12 +6,27 @@ android {
     namespace 'com.gustavo.reproductorsueno'
     compileSdk 35
 
+    signingConfigs {
+        beta {
+            storeFile rootProject.file('radioenlace-beta.keystore')
+            storePassword 'android'
+            keyAlias 'radioenlacebeta'
+            keyPassword 'android'
+        }
+    }
+
     defaultConfig {
         applicationId 'com.gustavo.reproductorsueno'
         minSdk 28
         targetSdk 35
         versionCode 2
         versionName '0.2'
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.beta
+        }
     }
 
     compileOptions {
