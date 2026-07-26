@@ -37,8 +37,24 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Build debug APK
+        id: apkbuild
+        continue-on-error: true
         working-directory: AndroidSleepPlayer/direct
-        run: gradle :app:assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee build-beta-0.3.log
+
+      - name: Upload compiler log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReproductorMusica-Beta-0.3-build-log
+          path: AndroidSleepPlayer/direct/build-beta-0.3.log
+          if-no-files-found: error
+
+      - name: Stop on compiler error
+        if: steps.apkbuild.outcome == 'failure'
+        run: exit 1
 
       - name: Prepare APK
         run: |
