@@ -18,14 +18,22 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
+import android.text.Editable;
+import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -64,7 +72,9 @@ public class MainActivity extends Activity {
     private static final int PICK_PLAYLIST = 1002;
     private static final int CREATE_PLAYLIST = 1003;
     private static final int REQUEST_MEDIA_PERMISSION = 77;
-    private static final int LOCKED_NIGHT_MAX_DB = -40;
+    private static final int REQUEST_NOTIFICATION_PERMISSION = 78;
+    private static final int DEFAULT_NIGHT_DB = -20;
+    private static final int DEFAULT_NORMAL_DB = -6;
 
     private static final int C_BG = Color.rgb(5, 13, 21);
     private static final int C_PANEL = Color.rgb(15, 34, 48);
@@ -80,12 +90,19 @@ public class MainActivity extends Activity {
     private final ArrayList<String> trackUris = new ArrayList<>();
     private final ArrayList<String> trackNames = new ArrayList<>();
     private final ArrayList<LibraryTrack> library = new ArrayList<>();
+    private final ArrayList<LibraryTrack> visibleLibrary = new ArrayList<>();
     private final ArrayList<SoundProfile> profiles = new ArrayList<>();
     private final ArrayList<View> pages = new ArrayList<>();
 
     private SharedPreferences prefs;
     private ViewPager2 pager;
     private Button[] navButtons;
+    private Button normalModeButton;
+    private Button nightModeButton;
+    private Button fmButton;
+    private Button mainPlayButton;
+    private Button miniPlayButton;
+    private Button saveNightLimitButton;
     private TextView nowTitle;
     private TextView nowStatus;
     private TextView outputSummary;
@@ -93,78 +110,171 @@ public class MainActivity extends Activity {
     private TextView volumeLabel;
     private TextView trackCount;
     private TextView libraryCount;
-    private Button normalModeButton;
-    private Button nightModeButton;
-    private Button fmButton;
+    private TextView miniTitle;
+    private TextView miniStatus;
+    private TextView elapsedLabel;
+    private TextView durationLabel;
+    private LinearLayout miniPlayer;
     private SeekBar volumeBar;
+    private SeekBar progressBar;
     private CheckBox lockNightMaximum;
     private CheckBox shuffle;
     private Spinner playlistSpinner;
     private Spinner profileSpinner;
     private ArrayAdapter<String> playlistAdapter;
-    private ArrayAdapter<String> profileAdapter;
     private ArrayAdapter<String> playlistTrackAdapter;
     private ArrayAdapter<String> libraryAdapter;
-    private ArrayList<LibraryTrack> visibleLibrary = new ArrayList<>();
+    private ArrayAdapter<String> profileAdapter;
 
     private boolean nightMode;
     private boolean fmEnabled;
+    private boolean servicePlaying;
+    private boolean serviceLoading;
+    private boolean stateKnown;
+    private boolean userSeeking;
+    private boolean userChangingVolume;
+    private boolean pendingPlayAfterPermission;
+    private int currentServiceIndex;
     private String currentPlaylistId;
     private String activeProfileId;
 
     private final BroadcastReceiver stateReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
+        @Override public void onReceive(Context context, Intent intent) {
             if (!PlaybackService.BROADCAST_STATE.equals(intent.getAction())) return;
             String title = intent.getStringExtra(PlaybackService.EXTRA_TITLE);
             String message = intent.getStringExtra(PlaybackService.EXTRA_MESSAGE);
-            boolean playing = intent.getBooleanExtra(PlaybackService.EXTRA_PLAYING, false);
-            if (nowTitle != null) nowTitle.setText(title == null || title.trim().isEmpty() ? "Sin selección" : cleanTitle(title));
-            if (nowStatus != null) {
-                nowStatus.setText(message != null && !message.isEmpty()
-                        ? message.toUpperCase(Locale.ROOT)
-                        : (playing ? "REPRODUCIENDO" : "EN PAUSA"));
-                nowStatus.setTextColor(message != null && !message.isEmpty() ? C_WARNING : (playing ? C_GREEN : C_MUTED));
+            String state = intent.getStringExtra(PlaybackService.EXTRA_STATE);
+            int position = intent.getIntExtra(PlaybackService.EXTRA_POSITION, 0);
+            int duration = intent.getIntExtra(PlaybackService.EXTRA_DURATION, 0);
+            int attenuation = intent.getIntExtra(PlaybackService.EXTRA_ATTENUATION_DB,
+                    prefs.getInt(dbKey(), nightMode ? DEFAULT_NIGHT_DB : DEFAULT_NORMAL_DB));
+            currentServiceIndex = intent.getIntExtra(PlaybackService.EXTRA_CURRENT_INDEX, currentServiceIndex);
+            servicePlaying = PlaybackService.STATE_PLAYING.equals(state);
+            serviceLoading = PlaybackService.STATE_LOADING.equals(state);
+            stateKnown = true;
+
+            String clean = title == null || title.trim().isEmpty()
+                    ? prefs.getString("last_title", "Sin selección") : cleanTitle(title);
+            if (nowTitle != null) nowTitle.setText(clean);
+            if (miniTitle != null) miniTitle.setText(clean);
+
+            String status;
+            int statusColor;
+            if (message != null && !message.isEmpty()) {
+                status = message;
+                statusColor = C_WARNING;
+            } else if (serviceLoading) {
+                status = "Cargando…";
+                statusColor = C_CYAN;
+            } else if (servicePlaying) {
+                status = "Reproduciendo";
+                statusColor = C_GREEN;
+            } else {
+                status = "En pausa";
+                statusColor = C_MUTED;
             }
+            if (nowStatus != null) {
+                nowStatus.setText(status.toUpperCase(Locale.ROOT));
+                nowStatus.setTextColor(statusColor);
+            }
+            if (miniStatus != null) {
+                miniStatus.setText(status);
+                miniStatus.setTextColor(statusColor);
+            }
+            updatePlayButtons();
+            updateProgress(position, duration);
+            if (!userChangingVolume && volumeBar != null) {
+                int clamped = Math.max(-60, Math.min(0, attenuation));
+                if (volumeBar.getProgress() != clamped + 60) volumeBar.setProgress(clamped + 60);
+                volumeLabel.setText(formatDb(clamped));
+            }
+            prefs.edit()
+                    .putString("last_title", clean)
+                    .putBoolean("last_playing", servicePlaying)
+                    .putInt("last_service_index", currentServiceIndex)
+                    .apply();
+
             String missing = intent.getStringExtra(PlaybackService.EXTRA_MISSING_URI);
             if (missing != null && !missing.isEmpty()) markMissingTrack(missing);
         }
     };
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
         prefs = getSharedPreferences("reproductor_sueno", MODE_PRIVATE);
-        nightMode = prefs.getBoolean("night_mode", true);
+        migrateSettings();
+        nightMode = prefs.getBoolean("night_mode", false);
         fmEnabled = prefs.getBoolean(fmKey(), false);
+        currentServiceIndex = prefs.getInt("last_service_index", 0);
         loadPlaylists();
         loadProfiles();
         activeProfileId = prefs.getString("active_profile", "auto");
         buildInterface();
         registerStateReceiver();
+        consumePendingProfileResult();
         requestNotificationPermission();
         if (hasAudioPermission()) scanLibrary();
+        else requestAudioPermission();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        consumePendingProfileResult();
+        refreshProfileSummary();
+        queryPlaybackState();
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN && volumeBar != null) {
+            if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_UP) {
+                changeAppVolumeBy(1);
+                return true;
+            }
+            if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                changeAppVolumeBy(-1);
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    private void migrateSettings() {
+        if (prefs.getBoolean("beta05_migrated", false)) return;
+        SharedPreferences.Editor editor = prefs.edit().putBoolean("beta05_migrated", true);
+        if (!prefs.contains("night_mode")) editor.putBoolean("night_mode", false);
+        if (!prefs.contains("night_db")) editor.putInt("night_db", DEFAULT_NIGHT_DB);
+        if (!prefs.contains("normal_db")) editor.putInt("normal_db", DEFAULT_NORMAL_DB);
+        if (!prefs.contains("lock_night_maximum")) editor.putBoolean("lock_night_maximum", true);
+        editor.apply();
     }
 
     private void buildInterface() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(C_BG);
-        root.setPadding(dp(12), dp(12), dp(12), dp(8));
+        root.setPadding(dp(12), dp(10), dp(12), dp(8));
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            int top = insets.getSystemWindowInsetTop();
+            int bottom = insets.getSystemWindowInsetBottom();
+            view.setPadding(dp(12), dp(10) + top, dp(12), dp(8) + bottom);
+            return insets;
+        });
 
-        LinearLayout header = horizontal();
         LinearLayout heading = new LinearLayout(this);
         heading.setOrientation(LinearLayout.VERTICAL);
         heading.addView(text("REPRODUCTOR DE MÚSICA", 22, C_TEXT, true), matchWrap());
-        heading.addView(text("RADIOENLACE AUDIO  ·  BETA 0.3", 11, C_CYAN, true), matchWrap());
-        header.addView(heading, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        heading.addView(text("RADIOENLACE AUDIO  ·  BETA 0.5", 11, C_CYAN, true), matchWrap());
+        root.addView(heading, matchWrap());
 
-        outputSummary = text("SALIDA ESTÁNDAR", 10, C_GREEN, true);
-        outputSummary.setGravity(Gravity.CENTER);
-        outputSummary.setPadding(dp(10), dp(7), dp(10), dp(7));
-        outputSummary.setBackground(roundRect(Color.rgb(17, 55, 54), dp(16), C_GREEN, 1));
-        header.addView(outputSummary, wrapWrap());
-        root.addView(header, matchWrap());
+        outputSummary = text("SALIDA AUTOMÁTICA · PERFIL ESTÁNDAR", 12, C_GREEN, true);
+        outputSummary.setGravity(Gravity.CENTER_VERTICAL);
+        outputSummary.setPadding(dp(12), dp(8), dp(12), dp(8));
+        outputSummary.setMaxLines(2);
+        outputSummary.setBackground(roundRect(Color.rgb(17, 55, 54), dp(14), C_GREEN, 1));
+        LinearLayout.LayoutParams outputParams = matchWrap();
+        outputParams.setMargins(0, dp(8), 0, 0);
+        root.addView(outputSummary, outputParams);
 
         pages.clear();
         pages.add(buildNowPlayingPage());
@@ -176,21 +286,31 @@ public class MainActivity extends Activity {
         pager.setAdapter(new FixedPageAdapter());
         pager.setOffscreenPageLimit(4);
         pager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
-            @Override public void onPageSelected(int position) { updateNavigation(position); }
+            @Override public void onPageSelected(int position) {
+                updateNavigation(position);
+                if (miniPlayer != null) miniPlayer.setVisibility(position == 0 ? View.GONE : View.VISIBLE);
+            }
         });
+        outputSummary.setOnClickListener(v -> pager.setCurrentItem(3, true));
         root.addView(pager, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
+        miniPlayer = buildMiniPlayer();
+        miniPlayer.setVisibility(View.GONE);
+        root.addView(miniPlayer, matchHeight(dp(66)));
+
         String[] tabs = {"REPRODUCIENDO", "BIBLIOTECA", "LISTAS", "SONIDO"};
         LinearLayout navigation = horizontal();
+        navigation.setPadding(0, dp(5), 0, dp(2));
         navButtons = new Button[tabs.length];
         for (int i = 0; i < tabs.length; i++) {
             final int page = i;
             Button button = button(tabs[i]);
-            button.setTextSize(10);
+            button.setTextSize(9);
+            button.setSingleLine(true);
             button.setOnClickListener(v -> pager.setCurrentItem(page, true));
             navButtons[i] = button;
-            navigation.addView(button, new LinearLayout.LayoutParams(0, dp(50), 1f));
+            navigation.addView(button, new LinearLayout.LayoutParams(0, dp(52), 1f));
         }
         root.addView(navigation, matchWrap());
 
@@ -199,6 +319,35 @@ public class MainActivity extends Activity {
         refreshProfiles();
         applyModeVisuals();
         updateNavigation(0);
+        updatePlayButtons();
+    }
+
+    private LinearLayout buildMiniPlayer() {
+        LinearLayout mini = horizontal();
+        mini.setPadding(dp(10), dp(7), dp(8), dp(7));
+        mini.setBackground(roundRect(C_PANEL, dp(15), Color.rgb(35, 72, 90), 1));
+        mini.setOnClickListener(v -> pager.setCurrentItem(0, true));
+
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        miniTitle = text(prefs.getString("last_title", "Toca una canción para comenzar"), 14, C_TEXT, true);
+        miniTitle.setSingleLine(true);
+        miniTitle.setEllipsize(TextUtils.TruncateAt.END);
+        miniStatus = text("Listo para reproducir", 11, C_MUTED, false);
+        textBlock.addView(miniTitle, matchWrap());
+        textBlock.addView(miniStatus, matchWrap());
+        mini.addView(textBlock, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        Button previous = compactTransport("◀");
+        miniPlayButton = compactTransport("▶");
+        Button next = compactTransport("▶");
+        previous.setOnClickListener(v -> sendPlayerCommand(PlaybackService.ACTION_PREVIOUS, -1));
+        miniPlayButton.setOnClickListener(v -> playOrPause());
+        next.setOnClickListener(v -> sendPlayerCommand(PlaybackService.ACTION_NEXT, -1));
+        mini.addView(previous, new LinearLayout.LayoutParams(dp(42), dp(46)));
+        mini.addView(miniPlayButton, new LinearLayout.LayoutParams(dp(46), dp(46)));
+        mini.addView(next, new LinearLayout.LayoutParams(dp(42), dp(46)));
+        return mini;
     }
 
     private View buildNowPlayingPage() {
@@ -221,40 +370,63 @@ public class MainActivity extends Activity {
 
         LinearLayout playerCard = card();
         playerCard.setGravity(Gravity.CENTER_HORIZONTAL);
-        TextView art = text("♫", 76, C_CYAN, false);
+        TextView art = text("♫", 72, C_CYAN, false);
         art.setGravity(Gravity.CENTER);
-        art.setBackground(roundRect(Color.rgb(14, 52, 72), dp(24), C_BLUE, 1));
+        art.setBackground(roundRect(Color.rgb(14, 52, 72), dp(22), C_BLUE, 1));
         playerCard.addView(art, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(175)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(148)));
+
         nowStatus = text("EN PAUSA", 11, C_MUTED, true);
         nowStatus.setGravity(Gravity.CENTER);
-        nowStatus.setPadding(0, dp(14), 0, dp(4));
+        nowStatus.setPadding(0, dp(12), 0, dp(3));
         playerCard.addView(nowStatus, matchWrap());
-        nowTitle = text("Sin selección", 21, C_TEXT, true);
+
+        nowTitle = text(prefs.getString("last_title", "Sin selección"), 20, C_TEXT, true);
         nowTitle.setGravity(Gravity.CENTER);
         nowTitle.setMaxLines(2);
         playerCard.addView(nowTitle, matchWrap());
 
+        progressBar = new SeekBar(this);
+        progressBar.setMax(1000);
+        progressBar.setPadding(0, dp(8), 0, 0);
+        playerCard.addView(progressBar, matchWrap());
+        LinearLayout times = horizontal();
+        elapsedLabel = text("0:00", 11, C_MUTED, false);
+        durationLabel = text("0:00", 11, C_MUTED, false);
+        times.addView(elapsedLabel, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        durationLabel.setGravity(Gravity.END);
+        times.addView(durationLabel, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        playerCard.addView(times, matchWrap());
+        progressBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) { }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { userSeeking = true; }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                userSeeking = false;
+                int duration = prefs.getInt("last_duration", 0);
+                if (duration > 0) sendSeek(Math.round(duration * seekBar.getProgress() / 1000f));
+            }
+        });
+
         LinearLayout controls = horizontal();
-        controls.setPadding(0, dp(14), 0, 0);
+        controls.setPadding(0, dp(12), 0, 0);
         Button previous = transportButton("◀");
-        Button playPause = transportButton("▶  ❚❚");
+        mainPlayButton = transportButton("▶");
         Button next = transportButton("▶");
         previous.setOnClickListener(v -> sendPlayerCommand(PlaybackService.ACTION_PREVIOUS, -1));
-        playPause.setOnClickListener(v -> sendPlayerCommand(PlaybackService.ACTION_TOGGLE, -1));
+        mainPlayButton.setOnClickListener(v -> playOrPause());
         next.setOnClickListener(v -> sendPlayerCommand(PlaybackService.ACTION_NEXT, -1));
-        playPause.setBackground(roundRect(C_GREEN, dp(28), 0, 0));
-        playPause.setTextColor(Color.rgb(3, 22, 18));
-        controls.addView(previous, weighted(56));
+        mainPlayButton.setBackground(roundRect(C_GREEN, dp(28), 0, 0));
+        mainPlayButton.setTextColor(Color.rgb(3, 22, 18));
+        controls.addView(previous, weighted(54));
         controls.addView(space(dp(10)), new LinearLayout.LayoutParams(dp(10), 1));
-        controls.addView(playPause, weighted(60));
+        controls.addView(mainPlayButton, weighted(60));
         controls.addView(space(dp(10)), new LinearLayout.LayoutParams(dp(10), 1));
-        controls.addView(next, weighted(56));
+        controls.addView(next, weighted(54));
         playerCard.addView(controls, matchWrap());
         root.addView(playerCard, cardParams());
 
         LinearLayout quickSound = card();
-        quickSound.addView(sectionTitle("CONTROL RÁPIDO"), matchWrap());
+        quickSound.addView(sectionTitle("VOLUMEN Y PROCESAMIENTO"), matchWrap());
         fmButton = button("SONIDO FM");
         fmButton.setOnClickListener(v -> {
             fmEnabled = !fmEnabled;
@@ -263,29 +435,41 @@ public class MainActivity extends Activity {
             sendSettings();
         });
         quickSound.addView(fmButton, matchHeight(dp(48)));
+        TextView label = text("Atenuación de la aplicación", 12, C_MUTED, false);
+        label.setPadding(0, dp(8), 0, 0);
+        quickSound.addView(label, matchWrap());
         volumeLabel = text("", 27, C_CYAN, true);
         volumeLabel.setGravity(Gravity.CENTER);
-        volumeLabel.setPadding(0, dp(9), 0, 0);
         quickSound.addView(volumeLabel, matchWrap());
         volumeBar = new SeekBar(this);
         volumeBar.setMax(60);
         quickSound.addView(volumeBar, matchWrap());
+        quickSound.addView(text(
+                "También puedes usar los botones físicos del teléfono. El número es una reducción digital, no dB(A) reales.",
+                11, C_MUTED, false), matchWrap());
         root.addView(quickSound, cardParams());
 
         volumeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int db = progress - 60;
-                if (nightMode && lockNightMaximum != null && lockNightMaximum.isChecked()
-                        && db > LOCKED_NIGHT_MAX_DB) {
-                    db = LOCKED_NIGHT_MAX_DB;
-                    if (seekBar.getProgress() != db + 60) seekBar.setProgress(db + 60);
+                int db = constrainedDb(progress - 60);
+                if (seekBar.getProgress() != db + 60) {
+                    seekBar.setProgress(db + 60);
+                    return;
                 }
-                volumeLabel.setText(formatDb(db));
-                prefs.edit().putInt(dbKey(), db).apply();
-                sendSettings();
+                if (volumeLabel != null) volumeLabel.setText(formatDb(db));
+                if (fromUser) {
+                    userChangingVolume = true;
+                    prefs.edit().putInt(dbKey(), db).apply();
+                    sendVolumeOnly(db);
+                }
             }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { userChangingVolume = true; }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                userChangingVolume = false;
+                int db = constrainedDb(seekBar.getProgress() - 60);
+                prefs.edit().putInt(dbKey(), db).apply();
+                sendVolumeOnly(db);
+            }
         });
         return scroll;
     }
@@ -293,39 +477,47 @@ public class MainActivity extends Activity {
     private View buildLibraryPage() {
         LinearLayout root = pageColumn();
         LinearLayout header = card();
-        header.addView(sectionTitle("BIBLIOTECA DEL TELÉFONO"), matchWrap());
-        libraryCount = text("Sin escanear", 12, C_MUTED, false);
-        header.addView(libraryCount, matchWrap());
+        LinearLayout titleRow = horizontal();
+        titleRow.addView(sectionTitle("BIBLIOTECA DEL TELÉFONO"),
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        libraryCount = text("Sin escanear", 11, C_CYAN, true);
+        titleRow.addView(libraryCount, wrapWrap());
+        header.addView(titleRow, matchWrap());
 
         EditText search = new EditText(this);
         search.setHint("Buscar canción, intérprete o álbum");
         search.setTextColor(C_TEXT);
         search.setHintTextColor(C_MUTED);
         search.setSingleLine(true);
-        header.addView(search, matchHeight(dp(50)));
+        search.setBackground(roundRect(C_PANEL_2, dp(12), Color.rgb(35, 72, 90), 1));
+        search.setPadding(dp(12), 0, dp(12), 0);
+        header.addView(search, matchHeight(dp(48)));
 
-        Button scan = button("ESCANEAR MÚSICA DEL TELÉFONO");
+        Button scan = button("ACTUALIZAR BIBLIOTECA");
         scan.setOnClickListener(v -> {
             if (hasAudioPermission()) scanLibrary();
             else requestAudioPermission();
         });
-        header.addView(scan, matchHeight(dp(48)));
+        LinearLayout.LayoutParams scanParams = matchHeight(dp(45));
+        scanParams.setMargins(0, dp(8), 0, 0);
+        header.addView(scan, scanParams);
         root.addView(header, cardParams());
 
         ListView list = new ListView(this);
-        libraryAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_2, android.R.id.text1,
-                new ArrayList<>()) {
-            @NonNull
-            @Override
-            public View getView(int position, View convertView, @NonNull ViewGroup parent) {
+        libraryAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_2,
+                android.R.id.text1, new ArrayList<>()) {
+            @NonNull @Override public View getView(int position, View convertView, @NonNull ViewGroup parent) {
                 View view = super.getView(position, convertView, parent);
                 TextView title = view.findViewById(android.R.id.text1);
                 TextView detail = view.findViewById(android.R.id.text2);
                 LibraryTrack track = visibleLibrary.get(position);
                 title.setText(track.title);
                 title.setTextColor(C_TEXT);
+                title.setTextSize(15);
                 detail.setText(track.artist + (track.album.isEmpty() ? "" : "  ·  " + track.album));
                 detail.setTextColor(C_MUTED);
+                detail.setTextSize(12);
+                view.setPadding(dp(5), dp(7), dp(5), dp(7));
                 view.setBackgroundColor(C_BG);
                 return view;
             }
@@ -333,26 +525,29 @@ public class MainActivity extends Activity {
         list.setAdapter(libraryAdapter);
         list.setDividerHeight(1);
         list.setOnItemClickListener((parent, view, position, id) ->
-                showLibraryTrackActions(visibleLibrary.get(position)));
+                playLibraryTrack(visibleLibrary.get(position)));
+        list.setOnItemLongClickListener((parent, view, position, id) -> {
+            showLibraryTrackActions(visibleLibrary.get(position));
+            return true;
+        });
         root.addView(list, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        search.addTextChangedListener(new SimpleTextWatcher() {
-            @Override public void afterTextChanged(android.text.Editable editable) {
-                filterLibrary(editable.toString());
-            }
+        search.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
+            @Override public void afterTextChanged(Editable editable) { filterLibrary(editable.toString()); }
         });
         return root;
     }
 
     private View buildPlaylistsPage() {
         LinearLayout root = pageColumn();
-
         LinearLayout top = card();
         LinearLayout titleRow = horizontal();
         titleRow.addView(sectionTitle("LISTAS DE REPRODUCCIÓN"),
                 new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        trackCount = text("0 pistas", 12, C_CYAN, true);
+        trackCount = text("0 pistas", 11, C_CYAN, true);
         titleRow.addView(trackCount, wrapWrap());
         top.addView(titleRow, matchWrap());
 
@@ -368,40 +563,39 @@ public class MainActivity extends Activity {
             @Override public void onNothingSelected(AdapterView<?> parent) { }
         });
 
-        LinearLayout actions1 = horizontal();
+        LinearLayout row1 = horizontal();
         Button newList = smallButton("NUEVA");
         Button deleteList = smallButton("ELIMINAR");
         newList.setOnClickListener(v -> createPlaylistDialog());
         deleteList.setOnClickListener(v -> deleteCurrentPlaylist());
-        actions1.addView(newList, weighted(46));
-        actions1.addView(space(dp(8)), new LinearLayout.LayoutParams(dp(8), 1));
-        actions1.addView(deleteList, weighted(46));
-        top.addView(actions1, matchWrap());
+        row1.addView(newList, weighted(44));
+        row1.addView(space(dp(8)), new LinearLayout.LayoutParams(dp(8), 1));
+        row1.addView(deleteList, weighted(44));
+        top.addView(row1, matchWrap());
 
-        LinearLayout actions2 = horizontal();
-        Button addMusic = smallButton("AGREGAR MÚSICA");
+        LinearLayout row2 = horizontal();
+        Button addMusic = smallButton("AGREGAR");
         Button importList = smallButton("IMPORTAR");
         Button exportList = smallButton("EXPORTAR");
         addMusic.setOnClickListener(v -> openAudioPicker());
-        importList.setOnClickListener(v -> showImportOptions());
+        importList.setOnClickListener(v -> openPlaylistPicker());
         exportList.setOnClickListener(v -> exportCurrentPlaylist());
-        actions2.addView(addMusic, weighted(48));
-        actions2.addView(space(dp(6)), new LinearLayout.LayoutParams(dp(6), 1));
-        actions2.addView(importList, weighted(42));
-        actions2.addView(space(dp(6)), new LinearLayout.LayoutParams(dp(6), 1));
-        actions2.addView(exportList, weighted(42));
-        top.addView(actions2, matchWrap());
+        row2.addView(addMusic, weighted(42));
+        row2.addView(space(dp(6)), new LinearLayout.LayoutParams(dp(6), 1));
+        row2.addView(importList, weighted(42));
+        row2.addView(space(dp(6)), new LinearLayout.LayoutParams(dp(6), 1));
+        row2.addView(exportList, weighted(42));
+        top.addView(row2, matchWrap());
         root.addView(top, cardParams());
 
         ListView list = new ListView(this);
         playlistTrackAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, trackNames) {
-            @NonNull
-            @Override public View getView(int position, View convertView, @NonNull ViewGroup parent) {
+            @NonNull @Override public View getView(int position, View convertView, @NonNull ViewGroup parent) {
                 TextView view = (TextView) super.getView(position, convertView, parent);
-                view.setTextColor(C_TEXT);
+                view.setTextColor(trackNames.get(position).startsWith("⚠") ? C_WARNING : C_TEXT);
                 view.setTextSize(15);
-                view.setPadding(dp(12), dp(12), dp(12), dp(12));
-                view.setBackgroundColor(C_BG);
+                view.setPadding(dp(12), dp(13), dp(12), dp(13));
+                view.setBackgroundColor(position == currentServiceIndex ? C_PANEL_2 : C_BG);
                 return view;
             }
         };
@@ -430,28 +624,32 @@ public class MainActivity extends Activity {
         profileInfo = text("", 13, C_MUTED, false);
         profileInfo.setPadding(0, dp(8), 0, dp(10));
         selected.addView(profileInfo, matchWrap());
-
-        LinearLayout buttons = horizontal();
+        LinearLayout profileButtons = horizontal();
         Button add = smallButton("AGREGAR AURICULARES");
         Button remove = smallButton("ELIMINAR PERFIL");
         add.setOnClickListener(v -> showAddHeadphonesDialog());
         remove.setOnClickListener(v -> deleteSelectedProfile());
-        buttons.addView(add, weighted(54));
-        buttons.addView(space(dp(8)), new LinearLayout.LayoutParams(dp(8), 1));
-        buttons.addView(remove, weighted(46));
-        selected.addView(buttons, matchWrap());
+        profileButtons.addView(add, weighted(52));
+        profileButtons.addView(space(dp(8)), new LinearLayout.LayoutParams(dp(8), 1));
+        profileButtons.addView(remove, weighted(44));
+        selected.addView(profileButtons, matchWrap());
         root.addView(selected, cardParams());
 
         LinearLayout safety = card();
         safety.addView(sectionTitle("SEGURIDAD Y REPRODUCCIÓN"), matchWrap());
         lockNightMaximum = new CheckBox(this);
-        styleCheckBox(lockNightMaximum, "Protección nocturna: máximo −40 dB");
+        styleCheckBox(lockNightMaximum, "Usar mi máximo nocturno: " + formatDb(getNightLimit()));
         lockNightMaximum.setChecked(prefs.getBoolean("lock_night_maximum", true));
         lockNightMaximum.setOnCheckedChangeListener((buttonView, checked) -> {
             prefs.edit().putBoolean("lock_night_maximum", checked).apply();
             enforceNightLimit();
         });
         safety.addView(lockNightMaximum, matchWrap());
+
+        saveNightLimitButton = button("GUARDAR NIVEL ACTUAL COMO MÁXIMO NOCTURNO");
+        saveNightLimitButton.setTextSize(11);
+        saveNightLimitButton.setOnClickListener(v -> saveCurrentNightLimit());
+        safety.addView(saveNightLimitButton, matchHeight(dp(48)));
 
         shuffle = new CheckBox(this);
         styleCheckBox(shuffle, "Orden aleatorio");
@@ -461,20 +659,15 @@ public class MainActivity extends Activity {
             sendSettings();
         });
         safety.addView(shuffle, matchWrap());
-
-        TextView routeSafety = text(
-                "Si se desconectan auriculares Bluetooth, cableados o USB, la reproducción se pausa. "
-                        + "La aplicación no continúa por el parlante del teléfono.",
-                13, C_WARNING, false);
-        routeSafety.setPadding(0, dp(10), 0, 0);
-        safety.addView(routeSafety, matchWrap());
+        safety.addView(text(
+                "Si se desconectan auriculares Bluetooth, cableados o USB, la reproducción se pausa y no pasa al parlante.",
+                13, C_WARNING, false), matchWrap());
         root.addView(safety, cardParams());
 
         LinearLayout standards = card();
-        standards.addView(sectionTitle("PERFILES PREDEFINIDOS"), matchWrap());
+        standards.addView(sectionTitle("FUNCIONAMIENTO INMEDIATO"), matchWrap());
         standards.addView(text(
-                "Sin selección manual, la aplicación usa un perfil estándar para auriculares cuando detecta "
-                        + "una salida de auriculares y un perfil estándar para los parlantes del teléfono.",
+                "No necesitas configurar nada para escuchar. En Automático se utiliza un perfil estándar adecuado para auriculares o para los parlantes del teléfono.",
                 13, C_MUTED, false), matchWrap());
         TextView phone = text("Teléfono detectado: " + Build.MANUFACTURER + " " + Build.MODEL,
                 13, C_CYAN, true);
@@ -484,14 +677,79 @@ public class MainActivity extends Activity {
         return scroll;
     }
 
+    private void playOrPause() {
+        if (serviceLoading) return;
+        if (!stateKnown) {
+            queryPlaybackState();
+            Toast.makeText(this, "Comprobando el reproductor…", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (servicePlaying) {
+            startPlaybackService(new Intent(this, PlaybackService.class).setAction(PlaybackService.ACTION_PAUSE));
+            return;
+        }
+        ensurePlayableListAndPlay();
+    }
+
+    private void ensurePlayableListAndPlay() {
+        if (trackUris.isEmpty()) {
+            if (!hasAudioPermission()) {
+                pendingPlayAfterPermission = true;
+                requestAudioPermission();
+                return;
+            }
+            if (library.isEmpty()) scanLibrary();
+            if (!library.isEmpty()) {
+                LibraryTrack first = library.get(0);
+                addTrack(first.uri, first.title);
+                saveTracks();
+                refreshTrackList();
+                currentServiceIndex = 0;
+            }
+        }
+        if (trackUris.isEmpty()) {
+            Toast.makeText(this, "No se encontró música para reproducir", Toast.LENGTH_LONG).show();
+            return;
+        }
+        sendPlayerCommand(PlaybackService.ACTION_PLAY, currentServiceIndex);
+    }
+
+    private void queryPlaybackState() {
+        Intent intent = new Intent(this, PlaybackService.class).setAction(PlaybackService.ACTION_QUERY_STATE);
+        startPlaybackService(intent);
+    }
+
+    private void changeAppVolumeBy(int delta) {
+        int db = constrainedDb(volumeBar.getProgress() - 60 + delta);
+        volumeBar.setProgress(db + 60);
+        volumeLabel.setText(formatDb(db));
+        prefs.edit().putInt(dbKey(), db).apply();
+        sendVolumeOnly(db);
+    }
+
+    private int constrainedDb(int requested) {
+        int db = Math.max(-60, Math.min(0, requested));
+        if (nightMode && lockNightMaximum != null && lockNightMaximum.isChecked()) {
+            db = Math.min(db, getNightLimit());
+        }
+        return db;
+    }
+
+    private void sendVolumeOnly(int db) {
+        Intent intent = new Intent(this, PlaybackService.class)
+                .setAction(PlaybackService.ACTION_SET_VOLUME)
+                .putExtra(PlaybackService.EXTRA_ATTENUATION_DB, db);
+        startPlaybackService(intent);
+    }
+
     private void setMode(boolean night) {
         if (nightMode == night) return;
         prefs.edit().putInt(dbKey(), volumeBar.getProgress() - 60).apply();
         nightMode = night;
         prefs.edit().putBoolean("night_mode", nightMode).apply();
         fmEnabled = prefs.getBoolean(fmKey(), false);
-        volumeBar.setProgress(prefs.getInt(dbKey(), nightMode ? -40 : -8) + 60);
-        enforceNightLimit();
+        int db = prefs.getInt(dbKey(), nightMode ? DEFAULT_NIGHT_DB : DEFAULT_NORMAL_DB);
+        volumeBar.setProgress(constrainedDb(db) + 60);
         applyModeVisuals();
         sendSettings();
     }
@@ -500,78 +758,215 @@ public class MainActivity extends Activity {
         styleModeButton(normalModeButton, !nightMode);
         styleModeButton(nightModeButton, nightMode);
         if (lockNightMaximum != null) lockNightMaximum.setVisibility(nightMode ? View.VISIBLE : View.GONE);
-        int db = prefs.getInt(dbKey(), nightMode ? -40 : -8);
-        volumeBar.setProgress(db + 60);
-        volumeLabel.setText(formatDb(volumeBar.getProgress() - 60));
+        if (saveNightLimitButton != null) saveNightLimitButton.setVisibility(nightMode ? View.VISIBLE : View.GONE);
+        int db = constrainedDb(prefs.getInt(dbKey(), nightMode ? DEFAULT_NIGHT_DB : DEFAULT_NORMAL_DB));
+        if (volumeBar != null) volumeBar.setProgress(db + 60);
+        if (volumeLabel != null) volumeLabel.setText(formatDb(db));
         updateFmButton();
         refreshProfileSummary();
     }
 
     private void updateFmButton() {
+        if (fmButton == null) return;
         fmButton.setText(fmEnabled ? "SONIDO FM  ·  ACTIVO" : "SONIDO FM  ·  APAGADO");
         fmButton.setTextColor(fmEnabled ? Color.rgb(3, 22, 18) : C_TEXT);
         fmButton.setBackground(roundRect(fmEnabled ? C_GREEN : C_PANEL_2,
                 dp(14), fmEnabled ? 0 : C_BLUE, fmEnabled ? 0 : 1));
     }
 
+    private void updatePlayButtons() {
+        String symbol = serviceLoading ? "…" : (servicePlaying ? "❚❚" : "▶");
+        if (mainPlayButton != null) {
+            mainPlayButton.setText(symbol);
+            mainPlayButton.setEnabled(!serviceLoading);
+        }
+        if (miniPlayButton != null) {
+            miniPlayButton.setText(symbol);
+            miniPlayButton.setEnabled(!serviceLoading);
+        }
+    }
+
+    private void updateProgress(int position, int duration) {
+        prefs.edit().putInt("last_duration", duration).apply();
+        if (!userSeeking && progressBar != null) {
+            progressBar.setProgress(duration <= 0 ? 0 : Math.round(position * 1000f / duration));
+        }
+        if (elapsedLabel != null) elapsedLabel.setText(formatTime(position));
+        if (durationLabel != null) durationLabel.setText(formatTime(duration));
+        if (playlistTrackAdapter != null) playlistTrackAdapter.notifyDataSetChanged();
+    }
+
+    private void sendSeek(int position) {
+        Intent intent = new Intent(this, PlaybackService.class)
+                .setAction(PlaybackService.ACTION_SEEK)
+                .putExtra(PlaybackService.EXTRA_SEEK_POSITION, position);
+        startPlaybackService(intent);
+    }
+
+    private void sendPlayerCommand(String action, int index) {
+        if (serviceLoading && (PlaybackService.ACTION_PLAY.equals(action)
+                || PlaybackService.ACTION_PLAY_INDEX.equals(action))) return;
+        if (trackUris.isEmpty() && !PlaybackService.ACTION_QUERY_STATE.equals(action)) {
+            ensurePlayableListAndPlay();
+            return;
+        }
+        Intent intent = basePlayerIntent(action);
+        intent.putStringArrayListExtra(PlaybackService.EXTRA_URIS, new ArrayList<>(trackUris));
+        intent.putStringArrayListExtra(PlaybackService.EXTRA_NAMES, new ArrayList<>(trackNames));
+        if (index >= 0) intent.putExtra(PlaybackService.EXTRA_INDEX, index);
+        else intent.putExtra(PlaybackService.EXTRA_INDEX, currentServiceIndex);
+        startPlaybackService(intent);
+    }
+
+    private Intent basePlayerIntent(String action) {
+        SoundProfile profile = resolvedProfile();
+        Intent intent = new Intent(this, PlaybackService.class).setAction(action);
+        intent.putExtra(PlaybackService.EXTRA_ATTENUATION_DB, volumeBar == null
+                ? prefs.getInt(dbKey(), nightMode ? DEFAULT_NIGHT_DB : DEFAULT_NORMAL_DB)
+                : volumeBar.getProgress() - 60);
+        intent.putExtra(PlaybackService.EXTRA_SHUFFLE, shuffle != null && shuffle.isChecked());
+        intent.putExtra(PlaybackService.EXTRA_NIGHT_MODE, nightMode);
+        intent.putExtra(PlaybackService.EXTRA_FM_PROCESSOR, fmEnabled);
+        intent.putExtra(PlaybackService.EXTRA_PROFILE_GAINS, profile.gains);
+        intent.putExtra(PlaybackService.EXTRA_PROFILE_PREAMP_DB, profile.preampDb);
+        intent.putExtra(PlaybackService.EXTRA_PROFILE_NAME, profile.name);
+        intent.putExtra(PlaybackService.EXTRA_EXPECT_HEADPHONES, "headphones".equals(profile.type));
+        return intent;
+    }
+
+    private void sendSettings() {
+        if (profiles.isEmpty()) return;
+        startPlaybackService(basePlayerIntent(PlaybackService.ACTION_SETTINGS));
+    }
+
+    private void startPlaybackService(Intent intent) {
+        try { startService(intent); }
+        catch (Exception error) {
+            Toast.makeText(this, "No se pudo iniciar la reproducción", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void playLibraryTrack(LibraryTrack track) {
+        int index = addTrack(track.uri, track.title);
+        currentServiceIndex = index;
+        saveTracks();
+        refreshTrackList();
+        sendPlayerCommand(PlaybackService.ACTION_PLAY_INDEX, index);
+    }
+
+    private void showLibraryTrackActions(LibraryTrack track) {
+        new AlertDialog.Builder(this)
+                .setTitle(track.title)
+                .setItems(new String[]{"Reproducir ahora", "Agregar a la lista", "Reproducir siguiente"},
+                        (dialog, which) -> {
+                            int index = addTrack(track.uri, track.title);
+                            saveTracks();
+                            refreshTrackList();
+                            if (which == 0) sendPlayerCommand(PlaybackService.ACTION_PLAY_INDEX, index);
+                            else if (which == 2) sendPlayNext(index);
+                        })
+                .show();
+    }
+
+    private void showPlaylistTrackActions(int position) {
+        if (position < 0 || position >= trackUris.size()) return;
+        new AlertDialog.Builder(this)
+                .setTitle(trackNames.get(position))
+                .setItems(new String[]{"Reproducir siguiente", "Quitar de la lista"}, (dialog, which) -> {
+                    if (which == 0) sendPlayNext(position);
+                    else removeTrack(position);
+                })
+                .show();
+    }
+
+    private void sendPlayNext(int position) {
+        Intent intent = basePlayerIntent(PlaybackService.ACTION_PLAY_NEXT);
+        intent.putExtra(PlaybackService.EXTRA_NEXT_URI, trackUris.get(position));
+        intent.putExtra(PlaybackService.EXTRA_NEXT_NAME, trackNames.get(position));
+        startPlaybackService(intent);
+        Toast.makeText(this, "Se reproducirá a continuación", Toast.LENGTH_SHORT).show();
+    }
+
     private void showAddHeadphonesDialog() {
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(18), dp(8), dp(18), 0);
+        form.addView(text("Marca", 13, C_TEXT, true), matchWrap());
         EditText brand = new EditText(this);
-        brand.setHint("Marca, por ejemplo Edifier");
+        brand.setHint("Por ejemplo: Edifier");
+        form.addView(brand, matchHeight(dp(52)));
+        TextView modelLabel = text("Modelo exacto", 13, C_TEXT, true);
+        modelLabel.setPadding(0, dp(8), 0, 0);
+        form.addView(modelLabel, matchWrap());
         EditText model = new EditText(this);
-        model.setHint("Modelo exacto, por ejemplo W600BT");
-        form.addView(brand, matchHeight(dp(54)));
-        form.addView(model, matchHeight(dp(54)));
+        model.setHint("Por ejemplo: W600BT");
+        form.addView(model, matchHeight(dp(52)));
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Agregar auriculares")
-                .setMessage("Escribe manualmente la marca y el modelo. No se utilizará el nombre Bluetooth.")
+                .setMessage("Escribe la marca y el modelo. El nombre Bluetooth no se utilizará.")
                 .setView(form)
                 .setPositiveButton("Buscar", null)
                 .setNegativeButton("Cancelar", null)
                 .create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String brandText = brand.getText().toString().trim();
-            String modelText = model.getText().toString().trim();
-            if (brandText.isEmpty() || modelText.isEmpty()) {
+            String b = brand.getText().toString().trim();
+            String m = model.getText().toString().trim();
+            if (b.isEmpty() || m.isEmpty()) {
                 Toast.makeText(this, "Completa marca y modelo", Toast.LENGTH_SHORT).show();
                 return;
             }
             dialog.dismiss();
-            searchHeadphoneProfile(brandText, modelText);
+            beginProfileSearch(b, m);
         }));
         dialog.show();
     }
 
+    private void beginProfileSearch(String brand, String model) {
+        ConnectivityManager manager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        Network network = manager == null ? null : manager.getActiveNetwork();
+        NetworkCapabilities capabilities = manager == null || network == null
+                ? null : manager.getNetworkCapabilities(network);
+        if (capabilities == null) {
+            PendingProfileJobService.schedule(this, brand, model);
+            Toast.makeText(this, "Sin conexión. La búsqueda se hará automáticamente con Wi-Fi.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        boolean unmetered = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
+        if (unmetered) {
+            searchHeadphoneProfile(brand, model);
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Usar datos móviles")
+                .setMessage("Necesito utilizar tus datos para obtener información del modelo "
+                        + brand + " " + model + ". ¿Deseas buscar ahora o esperar una conexión Wi-Fi?")
+                .setPositiveButton("Usar datos ahora", (dialog, which) -> searchHeadphoneProfile(brand, model))
+                .setNegativeButton("Esperar Wi-Fi", (dialog, which) -> {
+                    PendingProfileJobService.schedule(this, brand, model);
+                    Toast.makeText(this, "La búsqueda queda pendiente hasta que haya Wi-Fi.", Toast.LENGTH_LONG).show();
+                })
+                .show();
+    }
+
     private void searchHeadphoneProfile(String brand, String model) {
-        ProgressDialog progress = ProgressDialog.show(this, "Buscando perfil",
-                "Consultando mediciones disponibles para " + brand + " " + model + "…", true, false);
+        ProgressDialog progress = ProgressDialog.show(this, "Buscando información",
+                "Buscando datos para " + brand + " " + model + "…", true, false);
         HeadphoneProfileRepository.search(this, brand, model, new HeadphoneProfileRepository.Callback() {
             @Override public void onFound(HeadphoneProfileRepository.Result result) {
                 progress.dismiss();
-                String id = "hp_" + System.currentTimeMillis();
-                SoundProfile profile = new SoundProfile(id, brand + " " + model,
-                        "headphones", "Perfil medido: " + result.source,
-                        result.gainsDb, result.preampDb, false);
-                profiles.add(profile);
-                activeProfileId = id;
-                saveProfiles();
-                refreshProfiles();
+                saveFoundProfile(brand, model, result);
                 Toast.makeText(MainActivity.this,
-                        "Modelo encontrado. Perfil de sonido creado.", Toast.LENGTH_LONG).show();
+                        "Modelo encontrado. Perfil de sonido guardado.", Toast.LENGTH_LONG).show();
             }
-
             @Override public void onNotFound() {
                 progress.dismiss();
                 new AlertDialog.Builder(MainActivity.this)
                         .setTitle("Modelo no encontrado")
-                        .setMessage("No se encontraron mediciones suficientes. Se utilizará la ecualización estándar para auriculares.")
+                        .setMessage("Se utilizará el perfil estándar para auriculares.")
                         .setPositiveButton("Aceptar", null)
                         .show();
             }
-
             @Override public void onError(String message) {
                 progress.dismiss();
                 new AlertDialog.Builder(MainActivity.this)
@@ -581,6 +976,37 @@ public class MainActivity extends Activity {
                         .show();
             }
         });
+    }
+
+    private void saveFoundProfile(String brand, String model, HeadphoneProfileRepository.Result result) {
+        String requestedName = (brand + " " + model).trim();
+        for (SoundProfile profile : profiles) {
+            if (!profile.builtIn && profile.name.equalsIgnoreCase(requestedName)) {
+                activeProfileId = profile.id;
+                refreshProfiles();
+                return;
+            }
+        }
+        String id = "hp_" + System.currentTimeMillis();
+        profiles.add(new SoundProfile(id, requestedName, "headphones",
+                "Perfil medido: " + result.source, result.gainsDb, result.preampDb, false));
+        activeProfileId = id;
+        saveProfiles();
+        refreshProfiles();
+    }
+
+    private void consumePendingProfileResult() {
+        String result = prefs.getString("pending_profile_result", "");
+        if (result.isEmpty() || "pending".equals(result)) return;
+        String display = prefs.getString("pending_profile_display", "el modelo solicitado");
+        prefs.edit().remove("pending_profile_result").remove("pending_profile_display").apply();
+        loadProfiles();
+        activeProfileId = prefs.getString("active_profile", "auto");
+        refreshProfiles();
+        if ("found".equals(result)) Toast.makeText(this,
+                "Perfil encontrado y guardado: " + display, Toast.LENGTH_LONG).show();
+        else Toast.makeText(this,
+                "Modelo no encontrado: " + display + ". Se usará el perfil estándar.", Toast.LENGTH_LONG).show();
     }
 
     private void deleteSelectedProfile() {
@@ -610,9 +1036,7 @@ public class MainActivity extends Activity {
         profileAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         profileSpinner.setAdapter(profileAdapter);
         int selected = 0;
-        for (int i = 0; i < profiles.size(); i++) {
-            if (profiles.get(i).id.equals(activeProfileId)) selected = i;
-        }
+        for (int i = 0; i < profiles.size(); i++) if (profiles.get(i).id.equals(activeProfileId)) selected = i;
         profileSpinner.setSelection(selected);
         profileSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -628,15 +1052,12 @@ public class MainActivity extends Activity {
     }
 
     private void refreshProfileSummary() {
+        if (profiles.isEmpty()) return;
         SoundProfile profile = resolvedProfile();
-        if (profileInfo != null) {
-            profileInfo.setText(profile.description + "\n"
-                    + "Modo " + (nightMode ? "Nocturno" : "Normal")
-                    + (fmEnabled ? "  ·  Sonido FM activo" : "  ·  Sonido FM apagado"));
-        }
-        if (outputSummary != null) {
-            outputSummary.setText(shortProfileName(profile.name).toUpperCase(Locale.ROOT));
-        }
+        if (profileInfo != null) profileInfo.setText(profile.description + "\nModo "
+                + (nightMode ? "Nocturno" : "Normal")
+                + (fmEnabled ? "  ·  Sonido FM activo" : "  ·  Sonido FM apagado"));
+        if (outputSummary != null) outputSummary.setText(profile.name.toUpperCase(Locale.ROOT));
     }
 
     private SoundProfile selectedProfile() {
@@ -646,7 +1067,7 @@ public class MainActivity extends Activity {
 
     private SoundProfile resolvedProfile() {
         SoundProfile selected = selectedProfile();
-        if (selected == null || !"auto".equals(selected.id)) return selected;
+        if (selected != null && !"auto".equals(selected.id)) return selected;
         return hasHeadphoneOutput() ? findProfile("headphones_default") : findProfile("speaker_default");
     }
 
@@ -659,31 +1080,23 @@ public class MainActivity extends Activity {
         AudioManager manager = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (manager == null || Build.VERSION.SDK_INT < 23) return false;
         for (AudioDeviceInfo device : manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-            if (isHeadphoneType(device.getType())) return true;
+            int type = device.getType();
+            if (type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                    || type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                    || type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                    || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                    || type == AudioDeviceInfo.TYPE_WIRED_HEADSET
+                    || type == AudioDeviceInfo.TYPE_USB_HEADSET) return true;
         }
         return false;
-    }
-
-    private boolean isHeadphoneType(int type) {
-        return type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
-                || type == AudioDeviceInfo.TYPE_BLE_HEADSET
-                || type == AudioDeviceInfo.TYPE_BLE_SPEAKER
-                || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
-                || type == AudioDeviceInfo.TYPE_WIRED_HEADSET
-                || type == AudioDeviceInfo.TYPE_USB_HEADSET;
     }
 
     private void scanLibrary() {
         if (!hasAudioPermission()) return;
         library.clear();
         Uri collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-        String[] projection = {
-                MediaStore.Audio.Media._ID,
-                MediaStore.Audio.Media.TITLE,
-                MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.ALBUM,
-                MediaStore.Audio.Media.DURATION
-        };
+        String[] projection = {MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM};
         String selection = MediaStore.Audio.Media.IS_MUSIC + "!=0";
         try (Cursor cursor = getContentResolver().query(collection, projection, selection, null,
                 MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC")) {
@@ -693,19 +1106,20 @@ public class MainActivity extends Activity {
                 int artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST);
                 int albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM);
                 while (cursor.moveToNext()) {
-                    long id = cursor.getLong(idColumn);
-                    String title = value(cursor, titleColumn, "Pista");
-                    String artist = value(cursor, artistColumn, "Intérprete desconocido");
-                    String album = value(cursor, albumColumn, "");
-                    Uri uri = ContentUris.withAppendedId(collection, id);
-                    library.add(new LibraryTrack(uri.toString(), title, artist, album));
+                    Uri uri = ContentUris.withAppendedId(collection, cursor.getLong(idColumn));
+                    library.add(new LibraryTrack(uri.toString(), value(cursor, titleColumn, "Pista"),
+                            value(cursor, artistColumn, "Intérprete desconocido"), value(cursor, albumColumn, "")));
                 }
             }
         } catch (Exception error) {
             Toast.makeText(this, "No se pudo leer la biblioteca", Toast.LENGTH_LONG).show();
         }
         filterLibrary("");
-        libraryCount.setText(library.size() + " canciones encontradas");
+        if (libraryCount != null) libraryCount.setText(library.size() + " canciones");
+        if (pendingPlayAfterPermission) {
+            pendingPlayAfterPermission = false;
+            ensurePlayableListAndPlay();
+        }
     }
 
     private String value(Cursor cursor, int column, String fallback) {
@@ -715,7 +1129,7 @@ public class MainActivity extends Activity {
 
     private void filterLibrary(String query) {
         String normalized = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
-        visibleLibrary = new ArrayList<>();
+        visibleLibrary.clear();
         for (LibraryTrack track : library) {
             String haystack = (track.title + " " + track.artist + " " + track.album).toLowerCase(Locale.ROOT);
             if (normalized.isEmpty() || haystack.contains(normalized)) visibleLibrary.add(track);
@@ -727,51 +1141,17 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void showLibraryTrackActions(LibraryTrack track) {
-        new AlertDialog.Builder(this)
-                .setTitle(track.title)
-                .setItems(new String[]{"Agregar y reproducir", "Agregar a la lista", "Reproducir siguiente"},
-                        (dialog, which) -> {
-                            int index = addTrack(track.uri, track.title);
-                            saveTracks();
-                            refreshTrackList();
-                            if (which == 0) sendPlayerCommand(PlaybackService.ACTION_PLAY_INDEX, index);
-                            else if (which == 2) sendPlayNext(index);
-                        })
-                .show();
-    }
-
-    private void showPlaylistTrackActions(int position) {
-        if (position < 0 || position >= trackUris.size()) return;
-        new AlertDialog.Builder(this)
-                .setTitle(trackNames.get(position))
-                .setItems(new String[]{"Reproducir siguiente", "Quitar de la lista"}, (dialog, which) -> {
-                    if (which == 0) sendPlayNext(position);
-                    else removeTrack(position);
-                })
-                .show();
-    }
-
-    private void sendPlayNext(int position) {
-        if (position < 0 || position >= trackUris.size()) return;
-        Intent intent = basePlayerIntent(PlaybackService.ACTION_PLAY_NEXT);
-        intent.putExtra(PlaybackService.EXTRA_NEXT_URI, trackUris.get(position));
-        intent.putExtra(PlaybackService.EXTRA_NEXT_NAME, trackNames.get(position));
-        startPlaybackService(intent);
-        Toast.makeText(this, "Se reproducirá a continuación", Toast.LENGTH_SHORT).show();
-    }
-
     private int addTrack(String uri, String name) {
         int existing = trackUris.indexOf(uri);
         if (existing >= 0) return existing;
         trackUris.add(uri);
-        trackNames.add(name);
+        trackNames.add(name == null || name.trim().isEmpty() ? "Pista de audio" : name.trim());
         return trackUris.size() - 1;
     }
 
     private void markMissingTrack(String uri) {
         int index = trackUris.indexOf(uri);
-        if (index >= 0 && !trackNames.get(index).startsWith("⚠ ")) {
+        if (index >= 0 && !trackNames.get(index).startsWith("⚠")) {
             trackNames.set(index, "⚠ Archivo no encontrado · " + trackNames.get(index));
             saveTracks();
             refreshTrackList();
@@ -786,24 +1166,11 @@ public class MainActivity extends Activity {
         startActivityForResult(intent, PICK_AUDIO);
     }
 
-    private void showImportOptions() {
-        new AlertDialog.Builder(this)
-                .setTitle("Importar lista")
-                .setItems(new String[]{"Archivo M3U, M3U8 o PLS", "Listas públicas de Android"},
-                        (dialog, which) -> {
-                            if (which == 0) openPlaylistPicker();
-                            else importSystemPlaylists();
-                        })
-                .show();
-    }
-
     private void openPlaylistPicker() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.setType("*/*");
-        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
-                "audio/x-mpegurl", "audio/mpegurl", "application/x-mpegURL",
-                "application/vnd.apple.mpegurl", "audio/x-scpls", "text/plain"
-        });
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"audio/x-mpegurl", "audio/mpegurl",
+                "application/vnd.apple.mpegurl", "audio/x-scpls", "text/plain"});
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         startActivityForResult(intent, PICK_PLAYLIST);
     }
@@ -820,8 +1187,7 @@ public class MainActivity extends Activity {
         startActivityForResult(intent, CREATE_PLAYLIST);
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null) return;
         if (requestCode == PICK_AUDIO) {
@@ -841,9 +1207,8 @@ public class MainActivity extends Activity {
     private void importPlaylistFile(Uri uri) {
         int before = trackUris.size();
         String pendingTitle = null;
-        try {
-            getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        } catch (Exception ignored) { }
+        try { getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
+        catch (Exception ignored) { }
         try (InputStream input = getContentResolver().openInputStream(uri);
              BufferedReader reader = new BufferedReader(new InputStreamReader(input))) {
             String line;
@@ -852,7 +1217,7 @@ public class MainActivity extends Activity {
                 if (line.isEmpty()) continue;
                 if (line.startsWith("#EXTINF:")) {
                     int comma = line.indexOf(',');
-                    if (comma >= 0 && comma + 1 < line.length()) pendingTitle = line.substring(comma + 1).trim();
+                    if (comma >= 0) pendingTitle = line.substring(comma + 1).trim();
                     continue;
                 }
                 String lower = line.toLowerCase(Locale.ROOT);
@@ -896,70 +1261,10 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) { return null; }
     }
 
-    private void importSystemPlaylists() {
-        if (!hasAudioPermission()) {
-            requestAudioPermission();
-            return;
-        }
-        ArrayList<Long> ids = new ArrayList<>();
-        ArrayList<String> names = new ArrayList<>();
-        try (Cursor cursor = getContentResolver().query(
-                MediaStore.Audio.Playlists.EXTERNAL_CONTENT_URI,
-                new String[]{MediaStore.Audio.Playlists._ID, MediaStore.Audio.Playlists.NAME},
-                null, null, MediaStore.Audio.Playlists.NAME + " ASC")) {
-            if (cursor != null) {
-                int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Playlists._ID);
-                int nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Playlists.NAME);
-                while (cursor.moveToNext()) {
-                    ids.add(cursor.getLong(idColumn));
-                    names.add(cursor.getString(nameColumn));
-                }
-            }
-        } catch (Exception ignored) { }
-        if (ids.isEmpty()) {
-            Toast.makeText(this, "No se encontraron listas públicas del sistema", Toast.LENGTH_LONG).show();
-            return;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("Listas encontradas")
-                .setItems(names.toArray(new String[0]), (dialog, which) ->
-                        importSystemPlaylist(ids.get(which), names.get(which)))
-                .show();
-    }
-
-    private void importSystemPlaylist(long playlistId, String playlistName) {
-        String id = "system_" + playlistId + "_" + System.currentTimeMillis();
-        playlists.put(id, playlistName == null ? "Lista importada" : playlistName);
-        currentPlaylistId = id;
-        trackUris.clear();
-        trackNames.clear();
-        Uri members = MediaStore.Audio.Playlists.Members.getContentUri("external", playlistId);
-        try (Cursor cursor = getContentResolver().query(
-                members,
-                new String[]{MediaStore.Audio.Playlists.Members.AUDIO_ID, MediaStore.Audio.Playlists.Members.TITLE},
-                null, null, MediaStore.Audio.Playlists.Members.PLAY_ORDER + " ASC")) {
-            if (cursor != null) {
-                int audioId = cursor.getColumnIndexOrThrow(MediaStore.Audio.Playlists.Members.AUDIO_ID);
-                int title = cursor.getColumnIndexOrThrow(MediaStore.Audio.Playlists.Members.TITLE);
-                while (cursor.moveToNext()) {
-                    Uri mediaUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                            cursor.getLong(audioId));
-                    addUri(mediaUri, cursor.getString(title));
-                }
-            }
-        } catch (Exception ignored) { }
-        savePlaylists();
-        saveTracks();
-        refreshPlaylistAdapter();
-        playlistSpinner.setSelection(playlists.size() - 1);
-        refreshTrackList();
-    }
-
     private void addUri(Uri uri, String preferredName) {
         if (uri == null) return;
-        try {
-            getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        } catch (Exception ignored) { }
+        try { getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
+        catch (Exception ignored) { }
         addTrack(uri.toString(), preferredName == null || preferredName.trim().isEmpty()
                 ? resolveName(uri) : preferredName.trim());
     }
@@ -973,51 +1278,6 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) { }
         String last = uri.getLastPathSegment();
         return last == null ? "Pista de audio" : last;
-    }
-
-    private void sendPlayerCommand(String action, int index) {
-        if (trackUris.isEmpty()) {
-            Toast.makeText(this, "Primero agrega música a la lista", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        SoundProfile profile = resolvedProfile();
-        boolean expectHeadphones = "headphones".equals(profile.type);
-        if (expectHeadphones && !hasHeadphoneOutput()) {
-            Toast.makeText(this, "Conecta los auriculares antes de reproducir", Toast.LENGTH_LONG).show();
-            return;
-        }
-        Intent intent = basePlayerIntent(action);
-        intent.putStringArrayListExtra(PlaybackService.EXTRA_URIS, new ArrayList<>(trackUris));
-        intent.putStringArrayListExtra(PlaybackService.EXTRA_NAMES, new ArrayList<>(trackNames));
-        intent.putExtra(PlaybackService.EXTRA_INDEX, index);
-        startPlaybackService(intent);
-    }
-
-    private Intent basePlayerIntent(String action) {
-        SoundProfile profile = resolvedProfile();
-        Intent intent = new Intent(this, PlaybackService.class);
-        intent.setAction(action);
-        intent.putExtra(PlaybackService.EXTRA_ATTENUATION_DB, volumeBar.getProgress() - 60);
-        intent.putExtra(PlaybackService.EXTRA_SHUFFLE, shuffle != null && shuffle.isChecked());
-        intent.putExtra(PlaybackService.EXTRA_NIGHT_MODE, nightMode);
-        intent.putExtra(PlaybackService.EXTRA_FM_PROCESSOR, fmEnabled);
-        intent.putExtra(PlaybackService.EXTRA_PROFILE_GAINS, profile.gains);
-        intent.putExtra(PlaybackService.EXTRA_PROFILE_PREAMP_DB, profile.preampDb);
-        intent.putExtra(PlaybackService.EXTRA_PROFILE_NAME, profile.name);
-        intent.putExtra(PlaybackService.EXTRA_EXPECT_HEADPHONES, "headphones".equals(profile.type));
-        return intent;
-    }
-
-    private void sendSettings() {
-        if (volumeBar == null || profiles.isEmpty()) return;
-        startPlaybackService(basePlayerIntent(PlaybackService.ACTION_SETTINGS));
-    }
-
-    private void startPlaybackService(Intent intent) {
-        try { startService(intent); }
-        catch (Exception error) {
-            Toast.makeText(this, "No se pudo iniciar la reproducción", Toast.LENGTH_SHORT).show();
-        }
     }
 
     private void createPlaylistDialog() {
@@ -1045,10 +1305,9 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Debe quedar al menos una lista", Toast.LENGTH_SHORT).show();
             return;
         }
-        String name = playlists.get(currentPlaylistId);
         new AlertDialog.Builder(this)
                 .setTitle("Eliminar lista")
-                .setMessage("¿Eliminar “" + name + "”?")
+                .setMessage("¿Eliminar “" + playlists.get(currentPlaylistId) + "”?")
                 .setPositiveButton("Eliminar", (dialog, which) -> {
                     prefs.edit().remove("tracks_" + currentPlaylistId).apply();
                     playlists.remove(currentPlaylistId);
@@ -1081,7 +1340,7 @@ public class MainActivity extends Activity {
                 }
             }
         } catch (Exception ignored) { }
-        if (playlists.isEmpty()) playlists.put("default", "Para dormir");
+        if (playlists.isEmpty()) playlists.put("default", "Mi música");
         currentPlaylistId = prefs.getString("current_playlist", playlists.keySet().iterator().next());
         if (!playlists.containsKey(currentPlaylistId)) currentPlaylistId = playlists.keySet().iterator().next();
         savePlaylists();
@@ -1128,6 +1387,7 @@ public class MainActivity extends Activity {
                 trackNames.add(item.getString("name"));
             }
         } catch (Exception ignored) { }
+        currentServiceIndex = Math.max(0, Math.min(currentServiceIndex, Math.max(0, trackUris.size() - 1)));
         refreshTrackList();
     }
 
@@ -1152,7 +1412,7 @@ public class MainActivity extends Activity {
     private void loadProfiles() {
         profiles.clear();
         profiles.add(new SoundProfile("auto", "Automático · Perfil estándar", "auto",
-                "Selecciona automáticamente entre el perfil estándar de auriculares y el de parlantes.",
+                "Selecciona automáticamente el perfil estándar apropiado para la salida activa.",
                 new float[]{0, 0, 0, 0, 0}, 0f, true));
         profiles.add(new SoundProfile("speaker_default",
                 "Parlantes del teléfono · " + Build.MANUFACTURER + " " + Build.MODEL,
@@ -1162,20 +1422,18 @@ public class MainActivity extends Activity {
                 "Perfil neutro estándar para auriculares sin medición disponible.",
                 new float[]{0f, 0f, 0f, -0.5f, -1f}, 0f, true));
         profiles.add(new SoundProfile("sunvito_s20", "Sunvito S20", "headphones",
-                "Perfil estimado y suave para Sunvito S20.",
+                "Perfil estimado y suave para las pruebas personales.",
                 new float[]{-1f, -1.5f, 0f, -1.8f, -2.5f}, 0f, true));
-
-        String raw = prefs.getString("sound_profiles", "[]");
         try {
-            JSONArray array = new JSONArray(raw);
+            JSONArray array = new JSONArray(prefs.getString("sound_profiles", "[]"));
             for (int i = 0; i < array.length(); i++) {
                 JSONObject item = array.getJSONObject(i);
                 JSONArray gainsArray = item.getJSONArray("gains");
                 float[] gains = new float[5];
                 for (int j = 0; j < 5; j++) gains[j] = (float) gainsArray.optDouble(j, 0);
                 profiles.add(new SoundProfile(item.getString("id"), item.getString("name"),
-                        "headphones", item.optString("description", "Perfil encontrado"),
-                        gains, (float) item.optDouble("preamp", 0), false));
+                        "headphones", item.optString("description", "Perfil encontrado"), gains,
+                        (float) item.optDouble("preamp", 0), false));
             }
         } catch (Exception ignored) { }
     }
@@ -1200,6 +1458,28 @@ public class MainActivity extends Activity {
                 .putString("active_profile", activeProfileId).apply();
     }
 
+    private void saveCurrentNightLimit() {
+        int value = volumeBar.getProgress() - 60;
+        prefs.edit().putInt(nightLimitKey(), value).putBoolean("lock_night_maximum", true).apply();
+        lockNightMaximum.setChecked(true);
+        lockNightMaximum.setText("Usar mi máximo nocturno: " + formatDb(value));
+        Toast.makeText(this, "Máximo nocturno guardado para este perfil", Toast.LENGTH_SHORT).show();
+    }
+
+    private int getNightLimit() {
+        return prefs.getInt(nightLimitKey(), DEFAULT_NIGHT_DB);
+    }
+
+    private String nightLimitKey() {
+        return "night_limit_" + (activeProfileId == null ? "auto" : activeProfileId);
+    }
+
+    private void enforceNightLimit() {
+        if (!nightMode || lockNightMaximum == null || !lockNightMaximum.isChecked()) return;
+        int db = volumeBar.getProgress() - 60;
+        if (db > getNightLimit()) volumeBar.setProgress(getNightLimit() + 60);
+    }
+
     private boolean hasAudioPermission() {
         if (Build.VERSION.SDK_INT >= 33) {
             return checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED;
@@ -1208,16 +1488,13 @@ public class MainActivity extends Activity {
     }
 
     private void requestAudioPermission() {
-        if (Build.VERSION.SDK_INT >= 33) {
-            requestPermissions(new String[]{Manifest.permission.READ_MEDIA_AUDIO}, REQUEST_MEDIA_PERMISSION);
-        } else {
-            requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, REQUEST_MEDIA_PERMISSION);
-        }
+        if (Build.VERSION.SDK_INT >= 33) requestPermissions(
+                new String[]{Manifest.permission.READ_MEDIA_AUDIO}, REQUEST_MEDIA_PERMISSION);
+        else requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, REQUEST_MEDIA_PERMISSION);
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
+    @Override public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                                      @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_MEDIA_PERMISSION && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) scanLibrary();
@@ -1226,7 +1503,7 @@ public class MainActivity extends Activity {
     private void requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 78);
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATION_PERMISSION);
         }
     }
 
@@ -1241,12 +1518,6 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
-    private void enforceNightLimit() {
-        if (!nightMode || lockNightMaximum == null || !lockNightMaximum.isChecked()) return;
-        int db = volumeBar.getProgress() - 60;
-        if (db > LOCKED_NIGHT_MAX_DB) volumeBar.setProgress(LOCKED_NIGHT_MAX_DB + 60);
-    }
-
     private String dbKey() { return nightMode ? "night_db" : "normal_db"; }
     private String fmKey() { return nightMode ? "fm_night" : "fm_normal"; }
 
@@ -1259,13 +1530,13 @@ public class MainActivity extends Activity {
         return (db < 0 ? "−" + Math.abs(db) : String.valueOf(db)) + " dB";
     }
 
-    private String safeFileName(String value) {
-        return (value == null ? "Lista" : value).replaceAll("[\\\\/:*?\"<>|]", "_");
+    private String formatTime(int milliseconds) {
+        int total = Math.max(0, milliseconds / 1000);
+        return String.format(Locale.ROOT, "%d:%02d", total / 60, total % 60);
     }
 
-    private String shortProfileName(String value) {
-        if (value == null) return "Estándar";
-        return value.length() > 18 ? value.substring(0, 18) : value;
+    private String safeFileName(String value) {
+        return (value == null ? "Lista" : value).replaceAll("[\\\\/:*?\"<>|]", "_");
     }
 
     private void updateNavigation(int selected) {
@@ -1339,6 +1610,13 @@ public class MainActivity extends Activity {
         return view;
     }
 
+    private Button compactTransport(String value) {
+        Button view = button(value);
+        view.setTextSize(14);
+        view.setPadding(0, 0, 0, 0);
+        return view;
+    }
+
     private void styleModeButton(Button button, boolean active) {
         button.setTextColor(active ? Color.rgb(3, 22, 18) : C_TEXT);
         button.setBackground(roundRect(active ? C_GREEN : C_PANEL_2,
@@ -1402,31 +1680,23 @@ public class MainActivity extends Activity {
     }
 
     private final class FixedPageAdapter extends RecyclerView.Adapter<FixedPageAdapter.Holder> {
-        @NonNull @Override
-        public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        @NonNull @Override public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
             FrameLayout frame = new FrameLayout(MainActivity.this);
             frame.setLayoutParams(new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             return new Holder(frame);
         }
-
-        @Override
-        public void onBindViewHolder(@NonNull Holder holder, int position) {
+        @Override public void onBindViewHolder(@NonNull Holder holder, int position) {
             View page = pages.get(position);
             if (page.getParent() instanceof ViewGroup) ((ViewGroup) page.getParent()).removeView(page);
             holder.frame.removeAllViews();
             holder.frame.addView(page, new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         }
-
         @Override public int getItemCount() { return pages.size(); }
-
         final class Holder extends RecyclerView.ViewHolder {
             final FrameLayout frame;
-            Holder(FrameLayout frame) {
-                super(frame);
-                this.frame = frame;
-            }
+            Holder(FrameLayout frame) { super(frame); this.frame = frame; }
         }
     }
 
@@ -1451,7 +1721,6 @@ public class MainActivity extends Activity {
         final float[] gains;
         final float preampDb;
         final boolean builtIn;
-
         SoundProfile(String id, String name, String type, String description,
                      float[] gains, float preampDb, boolean builtIn) {
             this.id = id;
@@ -1462,10 +1731,5 @@ public class MainActivity extends Activity {
             this.preampDb = preampDb;
             this.builtIn = builtIn;
         }
-    }
-
-    private abstract static class SimpleTextWatcher implements android.text.TextWatcher {
-        @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
-        @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
     }
 }
