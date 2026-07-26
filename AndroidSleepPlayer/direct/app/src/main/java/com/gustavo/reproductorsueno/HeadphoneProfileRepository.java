@@ -194,7 +194,7 @@ public final class HeadphoneProfileRepository {
         HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
         connection.setConnectTimeout(12000);
         connection.setReadTimeout(20000);
-        connection.setRequestProperty("User-Agent", "RadioEnlaceAudio/0.5");
+        connection.setRequestProperty("User-Agent", "RadioEnlaceAudio/0.7");
         connection.setInstanceFollowRedirects(true);
         int response = connection.getResponseCode();
         if (response < 200 || response >= 300) {

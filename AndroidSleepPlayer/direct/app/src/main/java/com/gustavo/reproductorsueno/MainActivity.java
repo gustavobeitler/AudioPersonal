@@ -6,10 +6,12 @@ import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.BroadcastReceiver;
 import android.content.ClipData;
+import android.content.ComponentName;
 import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -24,6 +26,7 @@ import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.text.Editable;
@@ -95,6 +98,9 @@ public class MainActivity extends Activity {
     private final ArrayList<View> pages = new ArrayList<>();
 
     private SharedPreferences prefs;
+    private PlaybackService playbackService;
+    private boolean serviceBound;
+    private long lastHardwareVolumeEventMs;
     private ViewPager2 pager;
     private Button[] navButtons;
     private Button normalModeButton;
@@ -135,8 +141,24 @@ public class MainActivity extends Activity {
     private boolean userChangingVolume;
     private boolean pendingPlayAfterPermission;
     private int currentServiceIndex;
+    private int currentServicePosition;
     private String currentPlaylistId;
     private String activeProfileId;
+
+    private final ServiceConnection playbackConnection = new ServiceConnection() {
+        @Override public void onServiceConnected(ComponentName name, IBinder service) {
+            PlaybackService.LocalBinder binder = (PlaybackService.LocalBinder) service;
+            playbackService = binder.getService();
+            serviceBound = true;
+            syncBoundService();
+            playbackService.requestStateFromClient();
+        }
+
+        @Override public void onServiceDisconnected(ComponentName name) {
+            serviceBound = false;
+            playbackService = null;
+        }
+    };
 
     private final BroadcastReceiver stateReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -145,6 +167,7 @@ public class MainActivity extends Activity {
             String message = intent.getStringExtra(PlaybackService.EXTRA_MESSAGE);
             String state = intent.getStringExtra(PlaybackService.EXTRA_STATE);
             int position = intent.getIntExtra(PlaybackService.EXTRA_POSITION, 0);
+            currentServicePosition = position;
             int duration = intent.getIntExtra(PlaybackService.EXTRA_DURATION, 0);
             int attenuation = intent.getIntExtra(PlaybackService.EXTRA_ATTENUATION_DB,
                     prefs.getInt(dbKey(), nightMode ? DEFAULT_NIGHT_DB : DEFAULT_NORMAL_DB));
@@ -192,6 +215,7 @@ public class MainActivity extends Activity {
                     .putString("last_title", clean)
                     .putBoolean("last_playing", servicePlaying)
                     .putInt("last_service_index", currentServiceIndex)
+                    .putInt("last_position", currentServicePosition)
                     .apply();
 
             String missing = intent.getStringExtra(PlaybackService.EXTRA_MISSING_URI);
@@ -207,6 +231,7 @@ public class MainActivity extends Activity {
         nightMode = prefs.getBoolean("night_mode", false);
         fmEnabled = prefs.getBoolean(fmKey(), false);
         currentServiceIndex = prefs.getInt("last_service_index", 0);
+        currentServicePosition = prefs.getInt("last_position", 0);
         loadPlaylists();
         loadProfiles();
         activeProfileId = prefs.getString("active_profile", "auto");
@@ -225,16 +250,35 @@ public class MainActivity extends Activity {
         queryPlaybackState();
     }
 
+    @Override protected void onStart() {
+        super.onStart();
+        Intent serviceIntent = new Intent(this, PlaybackService.class);
+        startPlaybackService(serviceIntent);
+        try { bindService(serviceIntent, playbackConnection, Context.BIND_AUTO_CREATE); }
+        catch (Exception ignored) { }
+    }
+
+    @Override protected void onStop() {
+        if (serviceBound) {
+            try { unbindService(playbackConnection); } catch (Exception ignored) { }
+            serviceBound = false;
+            playbackService = null;
+        }
+        super.onStop();
+    }
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getAction() == KeyEvent.ACTION_DOWN && volumeBar != null) {
-            if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_UP) {
-                changeAppVolumeBy(1);
-                return true;
+        int keyCode = event.getKeyCode();
+        if ((keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)
+                && volumeBar != null) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                long now = event.getEventTime();
+                if (event.getRepeatCount() == 0 || now - lastHardwareVolumeEventMs >= 140L) {
+                    lastHardwareVolumeEventMs = now;
+                    changeAppVolumeBy(keyCode == KeyEvent.KEYCODE_VOLUME_UP ? 1 : -1);
+                }
             }
-            if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN) {
-                changeAppVolumeBy(-1);
-                return true;
-            }
+            return true;
         }
         return super.dispatchKeyEvent(event);
     }
@@ -264,7 +308,7 @@ public class MainActivity extends Activity {
         LinearLayout heading = new LinearLayout(this);
         heading.setOrientation(LinearLayout.VERTICAL);
         heading.addView(text("REPRODUCTOR DE MÚSICA", 22, C_TEXT, true), matchWrap());
-        heading.addView(text("RADIOENLACE AUDIO  ·  BETA 0.5", 11, C_CYAN, true), matchWrap());
+        heading.addView(text("RADIOENLACE AUDIO  ·  BETA " + "0.7", 11, C_CYAN, true), matchWrap());
         root.addView(heading, matchWrap());
 
         outputSummary = text("SALIDA AUTOMÁTICA · PERFIL ESTÁNDAR", 12, C_GREEN, true);
@@ -601,8 +645,11 @@ public class MainActivity extends Activity {
         };
         list.setAdapter(playlistTrackAdapter);
         list.setDividerHeight(1);
-        list.setOnItemClickListener((parent, view, position, id) ->
-                sendPlayerCommand(PlaybackService.ACTION_PLAY_INDEX, position));
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            currentServiceIndex = position;
+            currentServicePosition = 0;
+            sendPlayerCommand(PlaybackService.ACTION_PLAY_INDEX, position);
+        });
         list.setOnItemLongClickListener((parent, view, position, id) -> {
             showPlaylistTrackActions(position);
             return true;
@@ -678,14 +725,16 @@ public class MainActivity extends Activity {
     }
 
     private void playOrPause() {
-        if (serviceLoading) return;
-        if (!stateKnown) {
-            queryPlaybackState();
-            Toast.makeText(this, "Comprobando el reproductor…", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (servicePlaying) {
-            startPlaybackService(new Intent(this, PlaybackService.class).setAction(PlaybackService.ACTION_PAUSE));
+        boolean actuallyLoading = serviceBound && playbackService != null
+                ? playbackService.isLoadingForClient() : serviceLoading;
+        if (actuallyLoading) return;
+
+        boolean actuallyPlaying = serviceBound && playbackService != null
+                ? playbackService.isPlayingForClient() : servicePlaying;
+        if (actuallyPlaying) {
+            if (serviceBound && playbackService != null) playbackService.pauseFromClient();
+            else startPlaybackService(new Intent(this, PlaybackService.class)
+                    .setAction(PlaybackService.ACTION_PAUSE));
             return;
         }
         ensurePlayableListAndPlay();
@@ -711,10 +760,19 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "No se encontró música para reproducir", Toast.LENGTH_LONG).show();
             return;
         }
-        sendPlayerCommand(PlaybackService.ACTION_PLAY, currentServiceIndex);
+        if (serviceBound && playbackService != null) {
+            syncBoundService();
+            playbackService.playFromClient(currentServiceIndex, currentServicePosition);
+        } else {
+            sendPlayerCommand(PlaybackService.ACTION_PLAY, currentServiceIndex);
+        }
     }
 
     private void queryPlaybackState() {
+        if (serviceBound && playbackService != null) {
+            playbackService.requestStateFromClient();
+            return;
+        }
         Intent intent = new Intent(this, PlaybackService.class).setAction(PlaybackService.ACTION_QUERY_STATE);
         startPlaybackService(intent);
     }
@@ -736,6 +794,10 @@ public class MainActivity extends Activity {
     }
 
     private void sendVolumeOnly(int db) {
+        if (serviceBound && playbackService != null) {
+            playbackService.setVolumeFromClient(db);
+            return;
+        }
         Intent intent = new Intent(this, PlaybackService.class)
                 .setAction(PlaybackService.ACTION_SET_VOLUME)
                 .putExtra(PlaybackService.EXTRA_ATTENUATION_DB, db);
@@ -797,6 +859,10 @@ public class MainActivity extends Activity {
     }
 
     private void sendSeek(int position) {
+        if (serviceBound && playbackService != null) {
+            playbackService.seekFromClient(position);
+            return;
+        }
         Intent intent = new Intent(this, PlaybackService.class)
                 .setAction(PlaybackService.ACTION_SEEK)
                 .putExtra(PlaybackService.EXTRA_SEEK_POSITION, position);
@@ -804,18 +870,53 @@ public class MainActivity extends Activity {
     }
 
     private void sendPlayerCommand(String action, int index) {
-        if (serviceLoading && (PlaybackService.ACTION_PLAY.equals(action)
-                || PlaybackService.ACTION_PLAY_INDEX.equals(action))) return;
         if (trackUris.isEmpty() && !PlaybackService.ACTION_QUERY_STATE.equals(action)) {
             ensurePlayableListAndPlay();
             return;
         }
+
+        int targetIndex = index >= 0 ? index : currentServiceIndex;
+        if (serviceBound && playbackService != null) {
+            syncBoundService();
+            if (PlaybackService.ACTION_PLAY.equals(action)
+                    || PlaybackService.ACTION_PLAY_INDEX.equals(action)) {
+                int resume = PlaybackService.ACTION_PLAY_INDEX.equals(action)
+                        ? 0 : currentServicePosition;
+                playbackService.playFromClient(targetIndex, resume);
+            } else if (PlaybackService.ACTION_PAUSE.equals(action)) {
+                playbackService.pauseFromClient();
+            } else if (PlaybackService.ACTION_NEXT.equals(action)) {
+                playbackService.nextFromClient();
+            } else if (PlaybackService.ACTION_PREVIOUS.equals(action)) {
+                playbackService.previousFromClient();
+            } else if (PlaybackService.ACTION_SETTINGS.equals(action)) {
+                playbackService.applySettingsFromClient();
+            } else if (PlaybackService.ACTION_QUERY_STATE.equals(action)) {
+                playbackService.requestStateFromClient();
+            }
+            return;
+        }
+
         Intent intent = basePlayerIntent(action);
         intent.putStringArrayListExtra(PlaybackService.EXTRA_URIS, new ArrayList<>(trackUris));
         intent.putStringArrayListExtra(PlaybackService.EXTRA_NAMES, new ArrayList<>(trackNames));
-        if (index >= 0) intent.putExtra(PlaybackService.EXTRA_INDEX, index);
-        else intent.putExtra(PlaybackService.EXTRA_INDEX, currentServiceIndex);
+        intent.putExtra(PlaybackService.EXTRA_INDEX, targetIndex);
+        intent.putExtra(PlaybackService.EXTRA_RESUME_POSITION,
+                PlaybackService.ACTION_PLAY_INDEX.equals(action) ? 0 : currentServicePosition);
         startPlaybackService(intent);
+    }
+
+    private void syncBoundService() {
+        if (!serviceBound || playbackService == null || profiles.isEmpty()) return;
+        SoundProfile profile = resolvedProfile();
+        playbackService.syncQueueFromClient(new ArrayList<>(trackUris),
+                new ArrayList<>(trackNames), currentServiceIndex);
+        playbackService.configureFromClient(volumeBar == null
+                        ? prefs.getInt(dbKey(), nightMode ? DEFAULT_NIGHT_DB : DEFAULT_NORMAL_DB)
+                        : volumeBar.getProgress() - 60,
+                shuffle != null && shuffle.isChecked(), nightMode, fmEnabled,
+                profile.gains, profile.preampDb, profile.name,
+                "headphones".equals(profile.type));
     }
 
     private Intent basePlayerIntent(String action) {
@@ -836,6 +937,11 @@ public class MainActivity extends Activity {
 
     private void sendSettings() {
         if (profiles.isEmpty()) return;
+        if (serviceBound && playbackService != null) {
+            syncBoundService();
+            playbackService.applySettingsFromClient();
+            return;
+        }
         startPlaybackService(basePlayerIntent(PlaybackService.ACTION_SETTINGS));
     }
 
@@ -849,6 +955,7 @@ public class MainActivity extends Activity {
     private void playLibraryTrack(LibraryTrack track) {
         int index = addTrack(track.uri, track.title);
         currentServiceIndex = index;
+        currentServicePosition = 0;
         saveTracks();
         refreshTrackList();
         sendPlayerCommand(PlaybackService.ACTION_PLAY_INDEX, index);
@@ -862,7 +969,11 @@ public class MainActivity extends Activity {
                             int index = addTrack(track.uri, track.title);
                             saveTracks();
                             refreshTrackList();
-                            if (which == 0) sendPlayerCommand(PlaybackService.ACTION_PLAY_INDEX, index);
+                            if (which == 0) {
+                                currentServiceIndex = index;
+                                currentServicePosition = 0;
+                                sendPlayerCommand(PlaybackService.ACTION_PLAY_INDEX, index);
+                            }
                             else if (which == 2) sendPlayNext(index);
                         })
                 .show();
@@ -1389,6 +1500,7 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) { }
         currentServiceIndex = Math.max(0, Math.min(currentServiceIndex, Math.max(0, trackUris.size() - 1)));
         refreshTrackList();
+        syncBoundService();
     }
 
     private void saveTracks() {

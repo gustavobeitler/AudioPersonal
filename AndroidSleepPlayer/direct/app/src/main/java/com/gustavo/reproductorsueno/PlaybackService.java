@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
@@ -19,6 +20,7 @@ import android.media.audiofx.DynamicsProcessing;
 import android.media.audiofx.Equalizer;
 import android.media.audiofx.LoudnessEnhancer;
 import android.net.Uri;
+import android.os.Binder;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -55,6 +57,7 @@ public class PlaybackService extends Service {
     public static final String EXTRA_NEXT_URI = "next_uri";
     public static final String EXTRA_NEXT_NAME = "next_name";
     public static final String EXTRA_SEEK_POSITION = "seek_position";
+    public static final String EXTRA_RESUME_POSITION = "resume_position";
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_PLAYING = "playing";
     public static final String EXTRA_STATE = "state";
@@ -74,6 +77,7 @@ public class PlaybackService extends Service {
     private static final int[] PROFILE_BANDS = new int[]{60, 230, 910, 3600, 14000};
 
     private final ArrayList<String> uris = new ArrayList<>();
+    private final LocalBinder binder = new LocalBinder();
     private final ArrayList<String> names = new ArrayList<>();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Random random = new Random();
@@ -85,6 +89,7 @@ public class PlaybackService extends Service {
     private AudioManager audioManager;
     private AudioFocusRequest focusRequest;
     private AudioDeviceCallback deviceCallback;
+    private SharedPreferences statePrefs;
 
     private int currentIndex;
     private int attenuationDb = -6;
@@ -101,6 +106,7 @@ public class PlaybackService extends Service {
     private String playNextName;
     private int fadeGeneration;
     private int consecutiveErrors;
+    private int pendingResumePositionMs;
 
     private final Runnable progressTicker = new Runnable() {
         @Override public void run() {
@@ -121,10 +127,88 @@ public class PlaybackService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        statePrefs = getSharedPreferences("reproductor_sueno", MODE_PRIVATE);
         createNotificationChannel();
         registerReceiver(noisyReceiver, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
         registerDeviceCallback();
     }
+
+
+    public final class LocalBinder extends Binder {
+        public PlaybackService getService() {
+            return PlaybackService.this;
+        }
+    }
+
+    public void syncQueueFromClient(ArrayList<String> incomingUris, ArrayList<String> incomingNames,
+                                    int preferredIndex) {
+        if (incomingUris == null || incomingUris.isEmpty()) return;
+        String currentUri = currentIndex >= 0 && currentIndex < uris.size() ? uris.get(currentIndex) : null;
+        boolean changed = !uris.equals(incomingUris);
+        uris.clear();
+        uris.addAll(incomingUris);
+        names.clear();
+        if (incomingNames != null) names.addAll(incomingNames);
+        while (names.size() < uris.size()) names.add("Pista de audio");
+
+        if (player == null || !prepared) {
+            currentIndex = Math.max(0, Math.min(uris.size() - 1, preferredIndex));
+        } else if (changed && currentUri != null) {
+            int preserved = uris.indexOf(currentUri);
+            if (preserved >= 0) currentIndex = preserved;
+            else {
+                releasePlayer();
+                currentIndex = Math.max(0, Math.min(uris.size() - 1, preferredIndex));
+            }
+        } else if (currentIndex >= uris.size()) {
+            currentIndex = 0;
+        }
+    }
+
+    public void configureFromClient(int clientAttenuationDb, boolean clientShuffle,
+                                    boolean clientNightMode, boolean clientFmProcessor,
+                                    float[] clientProfileGains, float clientProfilePreampDb,
+                                    String clientProfileName, boolean clientExpectHeadphones) {
+        attenuationDb = Math.max(-60, Math.min(0, clientAttenuationDb));
+        shuffle = clientShuffle;
+        nightMode = clientNightMode;
+        fmProcessor = clientFmProcessor;
+        if (clientProfileGains != null && clientProfileGains.length >= 5) {
+            profileGains = clientProfileGains.clone();
+        }
+        profilePreampDb = Math.max(-12f, Math.min(0f, clientProfilePreampDb));
+        profileName = clientProfileName == null || clientProfileName.isEmpty()
+                ? "Perfil estándar" : clientProfileName;
+        expectHeadphones = clientExpectHeadphones;
+    }
+
+    public void playFromClient(int preferredIndex, int resumePositionMs) {
+        if (!checkExpectedOutput() || loading) return;
+        if (uris.isEmpty()) {
+            broadcastState("No hay canciones en la lista.", null);
+            return;
+        }
+        int requested = Math.max(0, Math.min(uris.size() - 1, preferredIndex));
+        if (player == null || !prepared || requested != currentIndex) {
+            startTrack(requested, Math.max(0, resumePositionMs));
+        } else {
+            playExplicitly();
+        }
+    }
+
+    public void pauseFromClient() { pausePlayback(null); }
+    public void nextFromClient() { if (checkExpectedOutput() && !loading) nextTrack(); }
+    public void previousFromClient() { if (checkExpectedOutput() && !loading) previousTrack(); }
+    public void seekFromClient(int position) { seekTo(position); }
+    public void setVolumeFromClient(int db) {
+        attenuationDb = Math.max(-60, Math.min(0, db));
+        applyVolumeImmediately();
+        broadcastState(null, null);
+    }
+    public void applySettingsFromClient() { applyCurrentSettings(); }
+    public void requestStateFromClient() { broadcastState(null, null); }
+    public boolean isPlayingForClient() { return safeIsPlaying(); }
+    public boolean isLoadingForClient() { return loading; }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) return START_STICKY;
@@ -138,7 +222,12 @@ public class PlaybackService extends Service {
         if (ACTION_PLAY_INDEX.equals(action)) {
             if (checkExpectedOutput() && !loading) startTrack(intent.getIntExtra(EXTRA_INDEX, 0));
         } else if (ACTION_PLAY.equals(action)) {
-            if (checkExpectedOutput()) playExplicitly();
+            if (checkExpectedOutput()) {
+                int resume = intent.getIntExtra(EXTRA_RESUME_POSITION,
+                        statePrefs == null ? 0 : statePrefs.getInt("last_position", 0));
+                if (player == null || !prepared) startTrack(currentIndex, resume);
+                else playExplicitly();
+            }
         } else if (ACTION_PAUSE.equals(action)) {
             pausePlayback(null);
         } else if (ACTION_NEXT.equals(action)) {
@@ -238,11 +327,14 @@ public class PlaybackService extends Service {
         broadcastState(message, null);
     }
 
-    private void startTrack(int index) {
+    private void startTrack(int index) { startTrack(index, 0); }
+
+    private void startTrack(int index, int resumePositionMs) {
         if (uris.isEmpty()) return;
         if (loading) return;
         currentIndex = Math.max(0, Math.min(uris.size() - 1, index));
         releasePlayer();
+        pendingResumePositionMs = Math.max(0, resumePositionMs);
         loading = true;
         prepared = false;
         String uri = uris.get(currentIndex);
@@ -264,6 +356,13 @@ public class PlaybackService extends Service {
                 attachAudioProcessing();
                 requestAudioFocus();
                 mp.setVolume(0f, 0f);
+                try {
+                    int duration = mp.getDuration();
+                    if (pendingResumePositionMs > 0 && pendingResumePositionMs < duration - 1000) {
+                        mp.seekTo(pendingResumePositionMs);
+                    }
+                } catch (Exception ignored) { }
+                pendingResumePositionMs = 0;
                 try { mp.start(); } catch (Exception ignored) { }
                 fadeFromZeroToTarget(nightMode ? 1800 : 900);
                 startForeground(NOTIFICATION_ID, buildNotification(true));
@@ -628,6 +727,15 @@ public class PlaybackService extends Service {
         state.putExtra(EXTRA_CURRENT_INDEX, currentIndex);
         if (message != null) state.putExtra(EXTRA_MESSAGE, message);
         if (missingUri != null) state.putExtra(EXTRA_MISSING_URI, missingUri);
+        if (statePrefs != null) {
+            statePrefs.edit()
+                    .putInt("last_service_index", currentIndex)
+                    .putInt("last_position", safePosition())
+                    .putInt("last_duration", safeDuration())
+                    .putString("last_title", currentTitle())
+                    .putBoolean("last_playing", safeIsPlaying())
+                    .apply();
+        }
         sendBroadcast(state);
     }
 
@@ -692,5 +800,5 @@ public class PlaybackService extends Service {
         super.onDestroy();
     }
 
-    @Override public IBinder onBind(Intent intent) { return null; }
+    @Override public IBinder onBind(Intent intent) { return binder; }
 }
