@@ -29,8 +29,7 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Restore stable beta signing key
-        run: |
-          base64 --decode AndroidSleepPlayer/direct/radioenlace-beta.keystore.b64 > AndroidSleepPlayer/direct/radioenlace-beta.keystore
+        run: base64 --decode AndroidSleepPlayer/direct/radioenlace-beta.keystore.b64 > AndroidSleepPlayer/direct/radioenlace-beta.keystore
 
       - name: Configure Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -44,11 +43,11 @@ jobs:
       - name: Prepare APK
         run: |
           mkdir -p AndroidSleepPlayer/dist
-          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.2.apk
+          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.3.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ReproductorMusica-Beta-0.2
-          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.2.apk
+          name: ReproductorMusica-Beta-0.3
+          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.3.apk
           if-no-files-found: error
