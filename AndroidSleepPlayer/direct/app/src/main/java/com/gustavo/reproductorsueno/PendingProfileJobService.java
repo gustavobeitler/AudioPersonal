@@ -12,7 +12,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class PendingProfileJobService extends JobService {
-    private static final int JOB_ID = 4104;
+    private static final int JOB_ID = 4105;
     private volatile boolean cancelled;
 
     public static void schedule(Context context, String brand, String model) {
@@ -33,8 +33,7 @@ public class PendingProfileJobService extends JobService {
         scheduler.schedule(info);
     }
 
-    @Override
-    public boolean onStartJob(JobParameters params) {
+    @Override public boolean onStartJob(JobParameters params) {
         cancelled = false;
         new Thread(() -> runSearch(params), "pending-profile-wifi").start();
         return true;
@@ -50,8 +49,8 @@ public class PendingProfileJobService extends JobService {
         }
 
         try {
-            HeadphoneProfileRepositoryV04.Result result =
-                    HeadphoneProfileRepositoryV04.searchSync(this, brand, model);
+            HeadphoneProfileRepository.Result result =
+                    HeadphoneProfileRepository.searchSync(this, brand, model);
             if (cancelled) {
                 jobFinished(params, true);
                 return;
@@ -82,14 +81,12 @@ public class PendingProfileJobService extends JobService {
     }
 
     private String saveProfile(SharedPreferences prefs, String brand, String model,
-                               HeadphoneProfileRepositoryV04.Result result) throws Exception {
+                               HeadphoneProfileRepository.Result result) throws Exception {
         JSONArray array = new JSONArray(prefs.getString("sound_profiles", "[]"));
         String requestedName = (brand + " " + model).trim();
         for (int i = 0; i < array.length(); i++) {
             JSONObject item = array.getJSONObject(i);
-            if (requestedName.equalsIgnoreCase(item.optString("name"))) {
-                return item.getString("id");
-            }
+            if (requestedName.equalsIgnoreCase(item.optString("name"))) return item.getString("id");
         }
 
         String id = "hp_" + System.currentTimeMillis();
@@ -106,8 +103,7 @@ public class PendingProfileJobService extends JobService {
         return id;
     }
 
-    @Override
-    public boolean onStopJob(JobParameters params) {
+    @Override public boolean onStopJob(JobParameters params) {
         cancelled = true;
         return true;
     }
