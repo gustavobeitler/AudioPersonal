@@ -18,7 +18,7 @@
         android:theme="@style/AppTheme">
 
         <activity
-            android:name=".MainActivityV04"
+            android:name=".MainActivity"
             android:screenOrientation="portrait"
             android:exported="true">
             <intent-filter>
@@ -28,7 +28,7 @@
         </activity>
 
         <service
-            android:name=".PlaybackServiceV04"
+            android:name=".PlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
