@@ -1,4 +1,4 @@
-name: Build Android Player Beta 0.7 Final
+name: Build Android Player Beta 0.8
 
 on:
   pull_request:
@@ -19,36 +19,41 @@ jobs:
           ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
-      - name: Recover and apply consolidated patch
+      - name: Apply only the two playback fixes
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          source = Path('.github/workflows/build-android-player.yml').read_text(encoding='utf-8')
-          marker = "<<'PATCH_B64'"
-          start = source.index(marker)
-          start = source.index('\n', start) + 1
-          end = source.index('\n          PATCH_B64', start)
-          lines = source[start:end].splitlines()
-          payload = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
-          Path('/tmp/beta07.patch.gz.b64').write_text(payload, encoding='utf-8')
-          PY
-          tr -d '[:space:]' < /tmp/beta07.patch.gz.b64 | base64 --decode | gzip -dc > /tmp/beta07.patch
-          echo "7190a847ea74a17614e720f6047ebb2ea0919c4dd76db5ace2b274596c695f36  /tmp/beta07.patch" | sha256sum -c -
-          patch -p0 < /tmp/beta07.patch
-          sed -i 's/BuildConfig.VERSION_NAME/"0.7"/g' AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
-          rm -f /tmp/beta07.patch /tmp/beta07.patch.gz.b64
+          cat > /tmp/beta08.patch.gz.b64 <<'PATCH_B64'
+          H4sICNFlZmoAA2JldGEwOC5wYXRjaADFV81y4jgQPm+eQpPDxBTGgIEAQzEVj3FSrgWbsk12c6IUWyHaMTYjy8xQOznMa+yL7H3z
+          YiuZH9v8heymanQALKm7P3V//VmUSiWgBB4JsWf7CM2GPlwgUvYwQS4tw9msHBG3PIU4KP8B57DshtPyJI4onIdlgmYk9GKXhiSK
+          URCWufE9dD/biMyxiyRu8YtckS9LlWZJvgTV9odG7UOtLsmtVrveqNbboFhh46xYLP4EFM1KnaOoXa5QXF2BUqstskf2Wa2Bq6sz
+          wMeM4DmkCCixh8MBDOAEEQAzD509+65DN44s9CVGEQUPmYd9m3uII1Wh73PgwMs9ds6KZ8WsyQMOoJ9DI5lBGlR9hMEE9XFEUcCA
+          PuyZ6wI3mQClj+DPpXM+8AMQVgvdbj6AMurp5rWpjuxx37Tt1GY9vn8Hp5mOHUsxbF0znEI2dnJAGEdoXT4hiH2/0El3PC1/Pm0l
+          0H6EBHlDgh4QQYGLIsB4QRGfiNjW/GYcUODGhG2keuChb52k6FW5yaterdXFamNT9itzjgjBHgKz+N7HLpgzeoIwUAlirgSOfoM8
+          imfspOlaJ13KEoUlXsjmpgAmiNoLVpXpiq1Ckq2xrVm3uqplj8+Lk/P1rgt4isD79+BTjH1PutUsWzcNye79OtYNB3zsAvlyJ8lZ
+          LjI8Afq6S1gpcYiIcKiQN4puFHZJwIcUIZqYKZQSfB9TFAmbIOncJsQBN1l3o4jFF7YdjGzlRhsPtJ6unOBDDQPGfeosZrueVNNw
+          GB/Hzt2QORzZuvqSw3sOXigcScHhjhT2dOQhR6s4uS7YrKY8Z3XkRNruBOE8I47jRB3PRTAwe9p4aOm3iqNlieom3DVCih+wCylm
+          bGYYA+Tn6EzQhGMmFnIRZg0iBCGOFusnMeGTnqT6Gvt0h0Kqwxg6XpL8k6aaA924GRumbt8VCstmbLSrolwFxctKU6zKSTfmezhp
+          Q7IkaprjfD/uNEt32SwFZkhjEnTOSuutp+qov188N37WYU8U0JzdevwnEd2rmhv3T518Vl6QihysN5SKvcd9vVTsdZN1d4JUvOjj
+          tVJx3OFGKg6m4IhU+Bt92G+90Yfccpb50m6nZMuaowpAfoResl5DEvMEtR1LUwbLlIi7aI+yo5NXP07THPXerZv3dQcrbh1s60V4
+          irN8OY4eea+An3rslao/HdC6peTmb4mJ4JXe8vo+YNsUl+I5poufdHc/AUJDltptuV2vNxrZi3ut0hKboLj8Wl/h+OjjAEHSh4sw
+          puARQQ8Hk5WYZZcE+oij7ItutTVpUIKZHiSvRCFrw2XU0VWlv88Oet4tRl8Fir5R4dzShpbZG6mOaYGeBgbPfzHSKOxtLMsiUMeO
+          9rsjAkpiVBDBFFL38TcCZ0Ih254HHCuMVJrRV1QNJAQD4J+/AfikOQo4B0VwXpGaLEy1ysOod4pxIEzxf4dpnRJmkyYShnQTYxVz
+          Z3O6nWV7FlM7nk4hWbDyLVHZSl/vKQyQYw6ef/BScFRDzbrW+0CznecfRk+xOK4kyzeWpq2BdU7onURdpQmBno/eqBeOuzzA7Wpb
+          bLG/J/wzy2zmz1/d1HQPXLDGklaNJW031kVqNcWB7X0GciudopDw6yObrTVSvrHrXMQvgSH7B9TcmTbgFIELRq6LlDpZi9bO9Nqi
+          dbEldklO+Ns2Yor2Lz/MfVuREAAA
+          PATCH_B64
+          tr -d '[:space:]' < /tmp/beta08.patch.gz.b64 | base64 --decode | gzip -dc > /tmp/beta08.patch
+          echo "07d1903c4a175b5b09e250ac46f2f317e023f66b1de2e087cda93eb9ccda96dd  /tmp/beta08.patch" | sha256sum -c -
+          patch -p0 < /tmp/beta08.patch
+          rm -f /tmp/beta08.patch /tmp/beta08.patch.gz.b64
 
-      - name: Verify clean source
+      - name: Verify only requested changes
         run: |
-          grep -q "versionCode 7" AndroidSleepPlayer/direct/app/build.gradle
-          grep -q "versionName '0.7'" AndroidSleepPlayer/direct/app/build.gradle
-          grep -q "class LocalBinder" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
-          grep -q "bindService" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
-          grep -q "playFromClient" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
-          test ! -f AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivityV04.java
-          test ! -f AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackServiceV04.java
-          test ! -f AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/HeadphoneProfileRepositoryV04.java
+          grep -q "versionCode 8" AndroidSleepPlayer/direct/app/build.gradle
+          grep -q "versionName '0.8'" AndroidSleepPlayer/direct/app/build.gradle
+          grep -q "focusChangeListener" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
+          grep -q "if (focusRequest != null) audioManager.requestAudioFocus(focusRequest);" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
+          grep -q 'BETA " + "0.8' AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
 
       - name: Java 17
         uses: actions/setup-java@v4
@@ -76,47 +81,34 @@ jobs:
         working-directory: AndroidSleepPlayer/direct
         run: |
           set -o pipefail
-          gradle clean :app:assembleDebug --stacktrace 2>&1 | tee build-beta-0.7-final.log
+          gradle clean :app:assembleDebug --stacktrace 2>&1 | tee build-beta-0.8.log
 
-      - name: Save consolidated source
+      - name: Save Beta 0.8 source
         shell: bash
         run: |
           git config user.name "RadioEnlace Build"
           git config user.email "actions@users.noreply.github.com"
           git add AndroidSleepPlayer/direct/app/build.gradle \
                   AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java \
-                  AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java \
-                  AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/HeadphoneProfileRepository.java
+                  AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
           if ! git diff --cached --quiet; then
-            git commit -m "Beta 0.7: reproducción estable y servicio enlazado [skip ci]"
+            git commit -m "Beta 0.8: corregir Play inicial y reanudación [skip ci]"
             BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
             git push origin "HEAD:$BRANCH"
           fi
-
-      - name: Package source snapshot
-        run: |
-          tar --exclude='AndroidSleepPlayer/direct/.gradle' \
-              --exclude='AndroidSleepPlayer/direct/app/build' \
-              --exclude='AndroidSleepPlayer/direct/radioenlace-beta.keystore' \
-              -czf AndroidSleepPlayer/source-snapshot-beta-0.7.tar.gz \
-              AndroidSleepPlayer/direct AndroidSleepPlayer/ROADMAP.md
-
-      - name: Upload source snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: ReproductorMusica-Beta-0.7-source
-          path: AndroidSleepPlayer/source-snapshot-beta-0.7.tar.gz
-          if-no-files-found: error
 
       - name: Prepare APK
         run: |
           rm -rf AndroidSleepPlayer/dist
           mkdir -p AndroidSleepPlayer/dist
-          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.7.apk
+          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.8.apk
+
+      - name: Verify APK integrity
+        run: unzip -t AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.8.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ReproductorMusica-Beta-0.7
-          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.7.apk
+          name: ReproductorMusica-Beta-0.8
+          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.8.apk
           if-no-files-found: error
