@@ -1,4 +1,4 @@
-name: Build Android Player Beta 0.7
+name: Build Android Player Beta 0.9
 
 on:
   pull_request:
@@ -20,105 +20,98 @@ jobs:
           ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
-      - name: Apply consolidated Beta 0.7 patch
+      - name: Apply only Play and hardware-volume fixes
         shell: bash
         run: |
-          cat > /tmp/beta07.patch.gz.b64 <<'PATCH_B64'
-          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
-          PATCH_B64
-          tr -d '[:space:]' < /tmp/beta07.patch.gz.b64 | base64 --decode | gzip -dc > /tmp/beta07.patch
-          echo "7190a847ea74a17614e720f6047ebb2ea0919c4dd76db5ace2b274596c695f36  /tmp/beta07.patch" | sha256sum -c -
-          patch -p0 < /tmp/beta07.patch
-          rm -f /tmp/beta07.patch /tmp/beta07.patch.gz.b64
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Verify clean Beta 0.7 source
+          gradle = Path('AndroidSleepPlayer/direct/app/build.gradle')
+          text = gradle.read_text(encoding='utf-8')
+          text = text.replace('versionCode 8', 'versionCode 9')
+          text = text.replace("versionName '0.8'", "versionName '0.9'")
+          gradle.write_text(text, encoding='utf-8')
+
+          main = Path('AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java')
+          text = main.read_text(encoding='utf-8')
+          text = text.replace('BETA " + "0.8', 'BETA " + "0.9')
+
+          old_play = '''        if (serviceBound && playbackService != null) {
+              syncBoundService();
+              playbackService.playFromClient(currentServiceIndex, currentServicePosition);
+          } else {
+              sendPlayerCommand(PlaybackService.ACTION_PLAY, currentServiceIndex);
+          }
+  '''
+          new_play = '''        Intent playIntent = basePlayerIntent(PlaybackService.ACTION_PLAY_INDEX);
+          playIntent.putStringArrayListExtra(PlaybackService.EXTRA_URIS, new ArrayList<>(trackUris));
+          playIntent.putStringArrayListExtra(PlaybackService.EXTRA_NAMES, new ArrayList<>(trackNames));
+          playIntent.putExtra(PlaybackService.EXTRA_INDEX, currentServiceIndex);
+          playIntent.putExtra(PlaybackService.EXTRA_RESUME_POSITION, currentServicePosition);
+          startPlaybackService(playIntent);
+  '''
+          if old_play not in text:
+              raise SystemExit('No se encontró el bloque de Play')
+          text = text.replace(old_play, new_play, 1)
+          main.write_text(text, encoding='utf-8')
+
+          service = Path('AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java')
+          text = service.read_text(encoding='utf-8')
+
+          old_focus_listener = '''    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> {
+          if (change == AudioManager.AUDIOFOCUS_LOSS
+                  || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+              pausePlayback(null);
+          }
+      };
+  '''
+          new_focus_listener = '''    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> { };
+  '''
+          if old_focus_listener not in text:
+              raise SystemExit('No se encontró el listener de foco')
+          text = text.replace(old_focus_listener, new_focus_listener, 1)
+
+          old_focus_method = '''    private void requestAudioFocus() {
+          if (audioManager == null) return;
+          if (Build.VERSION.SDK_INT >= 26) {
+              if (focusRequest != null) audioManager.requestAudioFocus(focusRequest);
+          } else {
+              audioManager.requestAudioFocus(focusChangeListener, AudioManager.STREAM_MUSIC,
+                      AudioManager.AUDIOFOCUS_GAIN);
+          }
+      }
+  '''
+          new_focus_method = '''    private void requestAudioFocus() {
+          // Sin foco exclusivo: la grabación de pantalla no puede devolver el reproductor a pausa.
+      }
+  '''
+          if old_focus_method not in text:
+              raise SystemExit('No se encontró el método de foco')
+          text = text.replace(old_focus_method, new_focus_method, 1)
+
+          old_action = '''        if (ACTION_PLAY_INDEX.equals(action)) {
+              if (checkExpectedOutput() && !loading) startTrack(intent.getIntExtra(EXTRA_INDEX, 0));
+  '''
+          new_action = '''        if (ACTION_PLAY_INDEX.equals(action)) {
+              if (checkExpectedOutput() && !loading) {
+                  int resume = intent.getIntExtra(EXTRA_RESUME_POSITION, 0);
+                  startTrack(intent.getIntExtra(EXTRA_INDEX, 0), resume);
+              }
+  '''
+          if old_action not in text:
+              raise SystemExit('No se encontró PLAY_INDEX')
+          text = text.replace(old_action, new_action, 1)
+          service.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Verify requested fixes
         run: |
-          grep -q "versionCode 7" AndroidSleepPlayer/direct/app/build.gradle
-          grep -q "versionName '0.7'" AndroidSleepPlayer/direct/app/build.gradle
-          grep -q "class LocalBinder" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
-          grep -q "bindService" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
-          grep -q "playFromClient" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
-          test ! -f AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivityV04.java
-          test ! -f AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackServiceV04.java
-          test ! -f AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/HeadphoneProfileRepositoryV04.java
+          grep -q "versionCode 9" AndroidSleepPlayer/direct/app/build.gradle
+          grep -q "versionName '0.9'" AndroidSleepPlayer/direct/app/build.gradle
+          grep -q "Intent playIntent = basePlayerIntent(PlaybackService.ACTION_PLAY_INDEX);" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
+          grep -q "change -> { };" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
+          grep -q "startTrack(intent.getIntExtra(EXTRA_INDEX, 0), resume);" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
+          grep -q "changeAppVolumeBy(keyCode == KeyEvent.KEYCODE_VOLUME_UP ? 1 : -1);" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
 
       - name: Java 17
         uses: actions/setup-java@v4
@@ -143,64 +136,37 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Build clean APK
-        id: apkbuild
-        continue-on-error: true
         working-directory: AndroidSleepPlayer/direct
         run: |
           set -o pipefail
-          gradle clean :app:assembleDebug --stacktrace 2>&1 | tee build-beta-0.7.log
+          gradle clean :app:assembleDebug --stacktrace 2>&1 | tee build-beta-0.9.log
 
-      - name: Upload compiler log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ReproductorMusica-Beta-0.7-build-log
-          path: AndroidSleepPlayer/direct/build-beta-0.7.log
-          if-no-files-found: error
-
-      - name: Stop on compiler error
-        if: steps.apkbuild.outcome == 'failure'
-        run: exit 1
-
-      - name: Save consolidated source
+      - name: Save Beta 0.9 source
         shell: bash
         run: |
           git config user.name "RadioEnlace Build"
           git config user.email "actions@users.noreply.github.com"
           git add AndroidSleepPlayer/direct/app/build.gradle \
                   AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java \
-                  AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java \
-                  AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/HeadphoneProfileRepository.java
+                  AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
           if ! git diff --cached --quiet; then
-            git commit -m "Beta 0.7: play estable, volumen y servicio enlazado [skip ci]"
+            git commit -m "Beta 0.9: Play directo sin pausa por foco [skip ci]"
             BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
             git push origin "HEAD:$BRANCH"
           fi
-
-      - name: Package source snapshot
-        run: |
-          tar --exclude='AndroidSleepPlayer/direct/.gradle' \
-              --exclude='AndroidSleepPlayer/direct/app/build' \
-              --exclude='AndroidSleepPlayer/direct/radioenlace-beta.keystore' \
-              -czf AndroidSleepPlayer/source-snapshot-beta-0.7.tar.gz \
-              AndroidSleepPlayer/direct AndroidSleepPlayer/ROADMAP.md
-
-      - name: Upload source snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: ReproductorMusica-Beta-0.7-source
-          path: AndroidSleepPlayer/source-snapshot-beta-0.7.tar.gz
-          if-no-files-found: error
 
       - name: Prepare APK
         run: |
           rm -rf AndroidSleepPlayer/dist
           mkdir -p AndroidSleepPlayer/dist
-          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.7.apk
+          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.9.apk
+
+      - name: Verify APK integrity
+        run: unzip -t AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.9.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ReproductorMusica-Beta-0.7
-          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.7.apk
+          name: ReproductorMusica-Beta-0.9
+          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.9.apk
           if-no-files-found: error
