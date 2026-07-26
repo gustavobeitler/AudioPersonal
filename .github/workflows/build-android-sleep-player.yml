@@ -40,11 +40,11 @@ jobs:
       - name: Prepare APK
         run: |
           mkdir -p AndroidSleepPlayer/dist
-          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorSueno_Beta_0.1.apk
+          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.2.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ReproductorSueno-Beta-0.1
-          path: AndroidSleepPlayer/dist/ReproductorSueno_Beta_0.1.apk
+          name: ReproductorMusica-Beta-0.2
+          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.2.apk
           if-no-files-found: error
