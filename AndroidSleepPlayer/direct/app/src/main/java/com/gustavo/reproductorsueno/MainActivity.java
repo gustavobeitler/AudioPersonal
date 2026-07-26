@@ -308,7 +308,7 @@ public class MainActivity extends Activity {
         LinearLayout heading = new LinearLayout(this);
         heading.setOrientation(LinearLayout.VERTICAL);
         heading.addView(text("REPRODUCTOR DE MÚSICA", 22, C_TEXT, true), matchWrap());
-        heading.addView(text("RADIOENLACE AUDIO  ·  BETA " + "0.9", 11, C_CYAN, true), matchWrap());
+        heading.addView(text("RADIOENLACE AUDIO  ·  BETA " + "0.10", 11, C_CYAN, true), matchWrap());
         root.addView(heading, matchWrap());
 
         outputSummary = text("SALIDA AUTOMÁTICA · PERFIL ESTÁNDAR", 12, C_GREEN, true);
@@ -395,127 +395,156 @@ public class MainActivity extends Activity {
     }
 
     private View buildNowPlayingPage() {
-        ScrollView scroll = pageScroll();
         LinearLayout root = pageColumn();
-        scroll.addView(root);
+        root.setPadding(0, dp(4), 0, dp(4));
 
         LinearLayout modeCard = card();
-        modeCard.addView(sectionTitle("MODO DE ESCUCHA"), matchWrap());
-        LinearLayout modes = horizontal();
+        modeCard.setOrientation(LinearLayout.HORIZONTAL);
+        modeCard.setGravity(Gravity.CENTER_VERTICAL);
+        modeCard.setPadding(dp(8), dp(5), dp(8), dp(5));
+        TextView modeLabel = text("MODO", 11, C_CYAN, true);
+        modeLabel.setGravity(Gravity.CENTER_VERTICAL);
+        modeCard.addView(modeLabel, new LinearLayout.LayoutParams(dp(54), dp(38)));
         normalModeButton = button("NORMAL");
         nightModeButton = button("NOCTURNO");
+        normalModeButton.setTextSize(11);
+        nightModeButton.setTextSize(11);
         normalModeButton.setOnClickListener(v -> setMode(false));
         nightModeButton.setOnClickListener(v -> setMode(true));
-        modes.addView(normalModeButton, weighted(48));
-        modes.addView(space(dp(8)), new LinearLayout.LayoutParams(dp(8), 1));
-        modes.addView(nightModeButton, weighted(48));
-        modeCard.addView(modes, matchWrap());
-        root.addView(modeCard, cardParams());
+        modeCard.addView(normalModeButton, new LinearLayout.LayoutParams(0, dp(38), 1f));
+        modeCard.addView(space(dp(6)), new LinearLayout.LayoutParams(dp(6), 1));
+        modeCard.addView(nightModeButton, new LinearLayout.LayoutParams(0, dp(38), 1f));
+        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        modeParams.setMargins(0, 0, 0, dp(6));
+        root.addView(modeCard, modeParams);
 
         LinearLayout playerCard = card();
-        playerCard.setGravity(Gravity.CENTER_HORIZONTAL);
-        TextView art = text("♫", 72, C_CYAN, false);
+        playerCard.setPadding(dp(10), dp(8), dp(10), dp(8));
+
+        LinearLayout playingHeader = horizontal();
+        playingHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView art = text("♫", 38, C_CYAN, false);
         art.setGravity(Gravity.CENTER);
-        art.setBackground(roundRect(Color.rgb(14, 52, 72), dp(22), C_BLUE, 1));
-        playerCard.addView(art, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(148)));
+        art.setBackground(roundRect(Color.rgb(14, 52, 72), dp(16), C_BLUE, 1));
+        playingHeader.addView(art, new LinearLayout.LayoutParams(dp(58), dp(58)));
 
-        nowStatus = text("EN PAUSA", 11, C_MUTED, true);
-        nowStatus.setGravity(Gravity.CENTER);
-        nowStatus.setPadding(0, dp(12), 0, dp(3));
-        playerCard.addView(nowStatus, matchWrap());
-
-        nowTitle = text(prefs.getString("last_title", "Sin selección"), 20, C_TEXT, true);
-        nowTitle.setGravity(Gravity.CENTER);
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        titleBlock.setPadding(dp(10), 0, 0, 0);
+        nowStatus = text("EN PAUSA", 10, C_MUTED, true);
+        nowTitle = text(prefs.getString("last_title", "Sin selección"), 17, C_TEXT, true);
         nowTitle.setMaxLines(2);
-        playerCard.addView(nowTitle, matchWrap());
+        nowTitle.setEllipsize(TextUtils.TruncateAt.END);
+        titleBlock.addView(nowStatus, matchWrap());
+        titleBlock.addView(nowTitle, matchWrap());
+        playingHeader.addView(titleBlock, new LinearLayout.LayoutParams(
+      0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        playerCard.addView(playingHeader, matchWrap());
 
         progressBar = new SeekBar(this);
         progressBar.setMax(1000);
-        progressBar.setPadding(0, dp(8), 0, 0);
+        progressBar.setPadding(0, dp(3), 0, 0);
         playerCard.addView(progressBar, matchWrap());
         LinearLayout times = horizontal();
-        elapsedLabel = text("0:00", 11, C_MUTED, false);
-        durationLabel = text("0:00", 11, C_MUTED, false);
-        times.addView(elapsedLabel, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        elapsedLabel = text("0:00", 10, C_MUTED, false);
+        durationLabel = text("0:00", 10, C_MUTED, false);
+        times.addView(elapsedLabel, new LinearLayout.LayoutParams(0,
+      LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         durationLabel.setGravity(Gravity.END);
-        times.addView(durationLabel, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        times.addView(durationLabel, new LinearLayout.LayoutParams(0,
+      LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         playerCard.addView(times, matchWrap());
         progressBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) { }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { userSeeking = true; }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                userSeeking = false;
-                int duration = prefs.getInt("last_duration", 0);
-                if (duration > 0) sendSeek(Math.round(duration * seekBar.getProgress() / 1000f));
-            }
+  @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) { }
+  @Override public void onStartTrackingTouch(SeekBar seekBar) { userSeeking = true; }
+  @Override public void onStopTrackingTouch(SeekBar seekBar) {
+      userSeeking = false;
+      int duration = prefs.getInt("last_duration", 0);
+      if (duration > 0) sendSeek(Math.round(duration * seekBar.getProgress() / 1000f));
+  }
         });
 
         LinearLayout controls = horizontal();
-        controls.setPadding(0, dp(12), 0, 0);
+        controls.setPadding(0, dp(4), 0, 0);
         Button previous = transportButton("◀");
         mainPlayButton = transportButton("▶");
         Button next = transportButton("▶");
         previous.setOnClickListener(v -> sendPlayerCommand(PlaybackService.ACTION_PREVIOUS, -1));
         mainPlayButton.setOnClickListener(v -> playOrPause());
         next.setOnClickListener(v -> sendPlayerCommand(PlaybackService.ACTION_NEXT, -1));
-        mainPlayButton.setBackground(roundRect(C_GREEN, dp(28), 0, 0));
+        mainPlayButton.setBackground(roundRect(C_GREEN, dp(22), 0, 0));
         mainPlayButton.setTextColor(Color.rgb(3, 22, 18));
-        controls.addView(previous, weighted(54));
-        controls.addView(space(dp(10)), new LinearLayout.LayoutParams(dp(10), 1));
-        controls.addView(mainPlayButton, weighted(60));
-        controls.addView(space(dp(10)), new LinearLayout.LayoutParams(dp(10), 1));
-        controls.addView(next, weighted(54));
+        controls.addView(previous, new LinearLayout.LayoutParams(0, dp(46), 1f));
+        controls.addView(space(dp(8)), new LinearLayout.LayoutParams(dp(8), 1));
+        controls.addView(mainPlayButton, new LinearLayout.LayoutParams(0, dp(46), 1.12f));
+        controls.addView(space(dp(8)), new LinearLayout.LayoutParams(dp(8), 1));
+        controls.addView(next, new LinearLayout.LayoutParams(0, dp(46), 1f));
         playerCard.addView(controls, matchWrap());
-        root.addView(playerCard, cardParams());
+        LinearLayout.LayoutParams playerParams = new LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        playerParams.setMargins(0, 0, 0, dp(6));
+        root.addView(playerCard, playerParams);
 
         LinearLayout quickSound = card();
-        quickSound.addView(sectionTitle("VOLUMEN Y PROCESAMIENTO"), matchWrap());
+        quickSound.setPadding(dp(10), dp(7), dp(10), dp(7));
+        LinearLayout soundHeader = horizontal();
+        soundHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView soundLabel = text("ATENUACIÓN", 11, C_CYAN, true);
+        soundHeader.addView(soundLabel, new LinearLayout.LayoutParams(
+      0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         fmButton = button("SONIDO FM");
+        fmButton.setTextSize(10);
         fmButton.setOnClickListener(v -> {
-            fmEnabled = !fmEnabled;
-            prefs.edit().putBoolean(fmKey(), fmEnabled).apply();
-            updateFmButton();
-            sendSettings();
+  fmEnabled = !fmEnabled;
+  prefs.edit().putBoolean(fmKey(), fmEnabled).apply();
+  updateFmButton();
+  sendSettings();
         });
-        quickSound.addView(fmButton, matchHeight(dp(48)));
-        TextView label = text("Atenuación de la aplicación", 12, C_MUTED, false);
-        label.setPadding(0, dp(8), 0, 0);
-        quickSound.addView(label, matchWrap());
-        volumeLabel = text("", 27, C_CYAN, true);
-        volumeLabel.setGravity(Gravity.CENTER);
-        quickSound.addView(volumeLabel, matchWrap());
+        soundHeader.addView(fmButton, new LinearLayout.LayoutParams(dp(132), dp(36)));
+        quickSound.addView(soundHeader, matchWrap());
+
+        LinearLayout volumeRow = horizontal();
+        volumeRow.setGravity(Gravity.CENTER_VERTICAL);
+        volumeLabel = text("", 22, C_CYAN, true);
+        volumeLabel.setGravity(Gravity.CENTER_VERTICAL);
+        volumeRow.addView(volumeLabel, new LinearLayout.LayoutParams(dp(82), dp(42)));
         volumeBar = new SeekBar(this);
         volumeBar.setMax(60);
-        quickSound.addView(volumeBar, matchWrap());
-        quickSound.addView(text(
-                "También puedes usar los botones físicos del teléfono. El número es una reducción digital, no dB(A) reales.",
-                11, C_MUTED, false), matchWrap());
-        root.addView(quickSound, cardParams());
+        volumeRow.addView(volumeBar, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        quickSound.addView(volumeRow, matchWrap());
+        TextView volumeHelp = text(
+      "Botones físicos vinculados · reducción digital, no dB(A) reales.",
+      10, C_MUTED, false);
+        volumeHelp.setMaxLines(1);
+        volumeHelp.setEllipsize(TextUtils.TruncateAt.END);
+        quickSound.addView(volumeHelp, matchWrap());
+        root.addView(quickSound, new LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         volumeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int db = constrainedDb(progress - 60);
-                if (seekBar.getProgress() != db + 60) {
-                    seekBar.setProgress(db + 60);
-                    return;
-                }
-                if (volumeLabel != null) volumeLabel.setText(formatDb(db));
-                if (fromUser) {
-                    userChangingVolume = true;
-                    prefs.edit().putInt(dbKey(), db).apply();
-                    sendVolumeOnly(db);
-                }
-            }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { userChangingVolume = true; }
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                userChangingVolume = false;
-                int db = constrainedDb(seekBar.getProgress() - 60);
-                prefs.edit().putInt(dbKey(), db).apply();
-                sendVolumeOnly(db);
-            }
+  @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+      int db = constrainedDb(progress - 60);
+      if (seekBar.getProgress() != db + 60) {
+          seekBar.setProgress(db + 60);
+          return;
+      }
+      if (volumeLabel != null) volumeLabel.setText(formatDb(db));
+      if (fromUser) {
+          userChangingVolume = true;
+          prefs.edit().putInt(dbKey(), db).apply();
+          sendVolumeOnly(db);
+      }
+  }
+  @Override public void onStartTrackingTouch(SeekBar seekBar) { userChangingVolume = true; }
+  @Override public void onStopTrackingTouch(SeekBar seekBar) {
+      userChangingVolume = false;
+      int db = constrainedDb(seekBar.getProgress() - 60);
+      prefs.edit().putInt(dbKey(), db).apply();
+      sendVolumeOnly(db);
+  }
         });
-        return scroll;
+        return root;
     }
 
     private View buildLibraryPage() {
