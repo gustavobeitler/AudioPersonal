@@ -1,0 +1,100 @@
+name: Trigger Android Player Beta 0.10
+
+on:
+  push:
+    branches:
+      - android-player-beta-0.10-build
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@v4
+        with:
+          ref: android-player-beta-0.10-build
+          fetch-depth: 0
+
+      - name: Apply compact start screen
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/build-beta-010-isolated.yml').read_text(encoding='utf-8')
+          begin = source.index('      - name: Apply only fixed-height start screen')
+          begin = source.index('        run: |', begin)
+          begin = source.index('\n', begin) + 1
+          end = source.index('      - name: Verify requested layout only', begin)
+          lines = source[begin:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
+          Path('/tmp/apply-beta010.sh').write_text(script + '\n', encoding='utf-8')
+          PY
+          bash /tmp/apply-beta010.sh
+
+      - name: Verify no vertical scroll
+        run: |
+          grep -q "versionCode 10" AndroidSleepPlayer/direct/app/build.gradle
+          grep -q "versionName '0.10'" AndroidSleepPlayer/direct/app/build.gradle
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java').read_text()
+          start = text.index('private View buildNowPlayingPage()')
+          end = text.index('private View buildLibraryPage()', start)
+          block = text[start:end]
+          assert 'ScrollView' not in block
+          assert 'mainPlayButton' in block and 'volumeBar' in block and 'fmButton' in block
+          PY
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Restore stable beta signing key
+        run: base64 --decode AndroidSleepPlayer/direct/radioenlace-beta.keystore.b64 > AndroidSleepPlayer/direct/radioenlace-beta.keystore
+
+      - name: Configure Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build clean APK
+        working-directory: AndroidSleepPlayer/direct
+        run: gradle clean :app:assembleDebug --stacktrace
+
+      - name: Save source and remove temporary workflows
+        run: |
+          git config user.name "RadioEnlace Build"
+          git config user.email "actions@users.noreply.github.com"
+          git add AndroidSleepPlayer/direct/app/build.gradle AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
+          git rm .github/workflows/build-beta-010-isolated.yml .github/workflows/trigger-beta-010.yml
+          git commit -m "Beta 0.10: pantalla inicial completa sin scroll [skip ci]"
+          git push origin HEAD:android-player-beta-0.10-build
+
+      - name: Prepare APK
+        run: |
+          rm -rf AndroidSleepPlayer/dist
+          mkdir -p AndroidSleepPlayer/dist
+          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.10.apk
+
+      - name: Verify APK integrity
+        run: unzip -t AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.10.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReproductorMusica-Beta-0.10
+          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.10.apk
+          if-no-files-found: error
