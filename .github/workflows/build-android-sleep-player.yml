@@ -1,0 +1,53 @@
+name: Build Reproductor Sueno APK
+
+on:
+  pull_request:
+    paths:
+      - 'AndroidSleepPlayer/**'
+      - '.github/workflows/build-android-sleep-player.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract Android project
+        run: |
+          base64 --decode AndroidSleepPlayer/ReproductorSueno-project.tar.gz.b64 > /tmp/ReproductorSueno-project.tar.gz
+          mkdir -p AndroidSleepPlayer/project
+          tar -xzf /tmp/ReproductorSueno-project.tar.gz -C AndroidSleepPlayer/project
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Build debug APK
+        working-directory: AndroidSleepPlayer/project
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Prepare APK
+        run: |
+          mkdir -p AndroidSleepPlayer/dist
+          cp AndroidSleepPlayer/project/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorSueno_Beta_0.1.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReproductorSueno-Beta-0.1
+          path: AndroidSleepPlayer/dist/ReproductorSueno_Beta_0.1.apk
+          if-no-files-found: error
