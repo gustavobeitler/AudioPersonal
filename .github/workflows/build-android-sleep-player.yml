@@ -28,6 +28,10 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Restore stable beta signing key
+        run: |
+          base64 --decode AndroidSleepPlayer/direct/radioenlace-beta.keystore.b64 > AndroidSleepPlayer/direct/radioenlace-beta.keystore
+
       - name: Configure Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
