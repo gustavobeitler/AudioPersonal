@@ -31,6 +31,27 @@ jobs:
       - name: Restore stable beta signing key
         run: base64 --decode AndroidSleepPlayer/direct/radioenlace-beta.keystore.b64 > AndroidSleepPlayer/direct/radioenlace-beta.keystore
 
+      - name: Package source snapshot
+        run: |
+          tar --exclude='AndroidSleepPlayer/direct/.gradle' \
+              --exclude='AndroidSleepPlayer/direct/app/build' \
+              --exclude='AndroidSleepPlayer/direct/radioenlace-beta.keystore' \
+              -czf AndroidSleepPlayer/source-snapshot-beta-0.5.tar.gz \
+              AndroidSleepPlayer/direct \
+              AndroidSleepPlayer/ROADMAP.md 2>/dev/null || \
+          tar --exclude='AndroidSleepPlayer/direct/.gradle' \
+              --exclude='AndroidSleepPlayer/direct/app/build' \
+              --exclude='AndroidSleepPlayer/direct/radioenlace-beta.keystore' \
+              -czf AndroidSleepPlayer/source-snapshot-beta-0.5.tar.gz \
+              AndroidSleepPlayer/direct
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReproductorMusica-source-snapshot
+          path: AndroidSleepPlayer/source-snapshot-beta-0.5.tar.gz
+          if-no-files-found: error
+
       - name: Configure Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
