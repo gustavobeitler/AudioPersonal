@@ -42,14 +42,14 @@ jobs:
         working-directory: AndroidSleepPlayer/direct
         run: |
           set -o pipefail
-          gradle :app:assembleDebug --stacktrace 2>&1 | tee build-beta-0.3.log
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee build-beta-0.4.log
 
       - name: Upload compiler log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ReproductorMusica-Beta-0.3-build-log
-          path: AndroidSleepPlayer/direct/build-beta-0.3.log
+          name: ReproductorMusica-Beta-0.4-build-log
+          path: AndroidSleepPlayer/direct/build-beta-0.4.log
           if-no-files-found: error
 
       - name: Stop on compiler error
@@ -59,11 +59,11 @@ jobs:
       - name: Prepare APK
         run: |
           mkdir -p AndroidSleepPlayer/dist
-          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.3.apk
+          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.4.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ReproductorMusica-Beta-0.3
-          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.3.apk
+          name: ReproductorMusica-Beta-0.4
+          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.4.apk
           if-no-files-found: error
