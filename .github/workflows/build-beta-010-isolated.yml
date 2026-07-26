@@ -1,0 +1,271 @@
+name: Build Android Player Beta 0.10 Isolated
+
+on:
+  push:
+    branches:
+      - android-player-beta-0.10-build
+    paths:
+      - '.github/workflows/build-beta-010-isolated.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@v4
+        with:
+          ref: android-player-beta-0.10-build
+          fetch-depth: 0
+
+      - name: Apply only fixed-height start screen
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gradle = Path('AndroidSleepPlayer/direct/app/build.gradle')
+          text = gradle.read_text(encoding='utf-8')
+          text = text.replace('versionCode 9', 'versionCode 10')
+          text = text.replace("versionName '0.9'", "versionName '0.10'")
+          gradle.write_text(text, encoding='utf-8')
+
+          main = Path('AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java')
+          text = main.read_text(encoding='utf-8')
+          text = text.replace('BETA " + "0.9', 'BETA " + "0.10')
+
+          start = text.index('    private View buildNowPlayingPage() {')
+          end = text.index('    private View buildLibraryPage()', start)
+          replacement = r'''    private View buildNowPlayingPage() {
+        LinearLayout root = pageColumn();
+        root.setPadding(0, dp(4), 0, dp(4));
+
+        LinearLayout modeCard = card();
+        modeCard.setOrientation(LinearLayout.HORIZONTAL);
+        modeCard.setGravity(Gravity.CENTER_VERTICAL);
+        modeCard.setPadding(dp(8), dp(5), dp(8), dp(5));
+        TextView modeLabel = text("MODO", 11, C_CYAN, true);
+        modeLabel.setGravity(Gravity.CENTER_VERTICAL);
+        modeCard.addView(modeLabel, new LinearLayout.LayoutParams(dp(54), dp(38)));
+        normalModeButton = button("NORMAL");
+        nightModeButton = button("NOCTURNO");
+        normalModeButton.setTextSize(11);
+        nightModeButton.setTextSize(11);
+        normalModeButton.setOnClickListener(v -> setMode(false));
+        nightModeButton.setOnClickListener(v -> setMode(true));
+        modeCard.addView(normalModeButton, new LinearLayout.LayoutParams(0, dp(38), 1f));
+        modeCard.addView(space(dp(6)), new LinearLayout.LayoutParams(dp(6), 1));
+        modeCard.addView(nightModeButton, new LinearLayout.LayoutParams(0, dp(38), 1f));
+        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        modeParams.setMargins(0, 0, 0, dp(6));
+        root.addView(modeCard, modeParams);
+
+        LinearLayout playerCard = card();
+        playerCard.setPadding(dp(10), dp(8), dp(10), dp(8));
+
+        LinearLayout playingHeader = horizontal();
+        playingHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView art = text("♫", 38, C_CYAN, false);
+        art.setGravity(Gravity.CENTER);
+        art.setBackground(roundRect(Color.rgb(14, 52, 72), dp(16), C_BLUE, 1));
+        playingHeader.addView(art, new LinearLayout.LayoutParams(dp(58), dp(58)));
+
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        titleBlock.setPadding(dp(10), 0, 0, 0);
+        nowStatus = text("EN PAUSA", 10, C_MUTED, true);
+        nowTitle = text(prefs.getString("last_title", "Sin selección"), 17, C_TEXT, true);
+        nowTitle.setMaxLines(2);
+        nowTitle.setEllipsize(TextUtils.TruncateAt.END);
+        titleBlock.addView(nowStatus, matchWrap());
+        titleBlock.addView(nowTitle, matchWrap());
+        playingHeader.addView(titleBlock, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        playerCard.addView(playingHeader, matchWrap());
+
+        progressBar = new SeekBar(this);
+        progressBar.setMax(1000);
+        progressBar.setPadding(0, dp(3), 0, 0);
+        playerCard.addView(progressBar, matchWrap());
+        LinearLayout times = horizontal();
+        elapsedLabel = text("0:00", 10, C_MUTED, false);
+        durationLabel = text("0:00", 10, C_MUTED, false);
+        times.addView(elapsedLabel, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        durationLabel.setGravity(Gravity.END);
+        times.addView(durationLabel, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        playerCard.addView(times, matchWrap());
+        progressBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) { }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { userSeeking = true; }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                userSeeking = false;
+                int duration = prefs.getInt("last_duration", 0);
+                if (duration > 0) sendSeek(Math.round(duration * seekBar.getProgress() / 1000f));
+            }
+        });
+
+        LinearLayout controls = horizontal();
+        controls.setPadding(0, dp(4), 0, 0);
+        Button previous = transportButton("◀");
+        mainPlayButton = transportButton("▶");
+        Button next = transportButton("▶");
+        previous.setOnClickListener(v -> sendPlayerCommand(PlaybackService.ACTION_PREVIOUS, -1));
+        mainPlayButton.setOnClickListener(v -> playOrPause());
+        next.setOnClickListener(v -> sendPlayerCommand(PlaybackService.ACTION_NEXT, -1));
+        mainPlayButton.setBackground(roundRect(C_GREEN, dp(22), 0, 0));
+        mainPlayButton.setTextColor(Color.rgb(3, 22, 18));
+        controls.addView(previous, new LinearLayout.LayoutParams(0, dp(46), 1f));
+        controls.addView(space(dp(8)), new LinearLayout.LayoutParams(dp(8), 1));
+        controls.addView(mainPlayButton, new LinearLayout.LayoutParams(0, dp(46), 1.12f));
+        controls.addView(space(dp(8)), new LinearLayout.LayoutParams(dp(8), 1));
+        controls.addView(next, new LinearLayout.LayoutParams(0, dp(46), 1f));
+        playerCard.addView(controls, matchWrap());
+        LinearLayout.LayoutParams playerParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        playerParams.setMargins(0, 0, 0, dp(6));
+        root.addView(playerCard, playerParams);
+
+        LinearLayout quickSound = card();
+        quickSound.setPadding(dp(10), dp(7), dp(10), dp(7));
+        LinearLayout soundHeader = horizontal();
+        soundHeader.setGravity(Gravity.CENTER_VERTICAL);
+        TextView soundLabel = text("ATENUACIÓN", 11, C_CYAN, true);
+        soundHeader.addView(soundLabel, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        fmButton = button("SONIDO FM");
+        fmButton.setTextSize(10);
+        fmButton.setOnClickListener(v -> {
+            fmEnabled = !fmEnabled;
+            prefs.edit().putBoolean(fmKey(), fmEnabled).apply();
+            updateFmButton();
+            sendSettings();
+        });
+        soundHeader.addView(fmButton, new LinearLayout.LayoutParams(dp(132), dp(36)));
+        quickSound.addView(soundHeader, matchWrap());
+
+        LinearLayout volumeRow = horizontal();
+        volumeRow.setGravity(Gravity.CENTER_VERTICAL);
+        volumeLabel = text("", 22, C_CYAN, true);
+        volumeLabel.setGravity(Gravity.CENTER_VERTICAL);
+        volumeRow.addView(volumeLabel, new LinearLayout.LayoutParams(dp(82), dp(42)));
+        volumeBar = new SeekBar(this);
+        volumeBar.setMax(60);
+        volumeRow.addView(volumeBar, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        quickSound.addView(volumeRow, matchWrap());
+        TextView volumeHelp = text(
+                "Botones físicos vinculados · reducción digital, no dB(A) reales.",
+                10, C_MUTED, false);
+        volumeHelp.setMaxLines(1);
+        volumeHelp.setEllipsize(TextUtils.TruncateAt.END);
+        quickSound.addView(volumeHelp, matchWrap());
+        root.addView(quickSound, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        volumeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                int db = constrainedDb(progress - 60);
+                if (seekBar.getProgress() != db + 60) {
+                    seekBar.setProgress(db + 60);
+                    return;
+                }
+                if (volumeLabel != null) volumeLabel.setText(formatDb(db));
+                if (fromUser) {
+                    userChangingVolume = true;
+                    prefs.edit().putInt(dbKey(), db).apply();
+                    sendVolumeOnly(db);
+                }
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { userChangingVolume = true; }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                userChangingVolume = false;
+                int db = constrainedDb(seekBar.getProgress() - 60);
+                prefs.edit().putInt(dbKey(), db).apply();
+                sendVolumeOnly(db);
+            }
+        });
+        return root;
+    }
+
+'''
+          text = text[:start] + replacement + text[end:]
+          main.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Verify requested layout only
+        shell: bash
+        run: |
+          grep -q "versionCode 10" AndroidSleepPlayer/direct/app/build.gradle
+          grep -q "versionName '0.10'" AndroidSleepPlayer/direct/app/build.gradle
+          grep -q 'BETA " + "0.10' AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java').read_text()
+          start = text.index('private View buildNowPlayingPage()')
+          end = text.index('private View buildLibraryPage()', start)
+          block = text[start:end]
+          assert 'ScrollView' not in block
+          assert 'return root;' in block
+          assert 'mainPlayButton' in block
+          assert 'volumeBar' in block
+          assert 'fmButton' in block
+          PY
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Restore stable beta signing key
+        run: base64 --decode AndroidSleepPlayer/direct/radioenlace-beta.keystore.b64 > AndroidSleepPlayer/direct/radioenlace-beta.keystore
+
+      - name: Configure Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build clean APK
+        working-directory: AndroidSleepPlayer/direct
+        run: |
+          set -o pipefail
+          gradle clean :app:assembleDebug --stacktrace 2>&1 | tee build-beta-0.10.log
+
+      - name: Save source and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "RadioEnlace Build"
+          git config user.email "actions@users.noreply.github.com"
+          git add AndroidSleepPlayer/direct/app/build.gradle \
+                  AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
+          git rm .github/workflows/build-beta-010-isolated.yml
+          git commit -m "Beta 0.10: pantalla inicial completa sin scroll [skip ci]"
+          git push origin HEAD:android-player-beta-0.10-build
+
+      - name: Prepare APK
+        run: |
+          rm -rf AndroidSleepPlayer/dist
+          mkdir -p AndroidSleepPlayer/dist
+          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.10.apk
+
+      - name: Verify APK integrity
+        run: unzip -t AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.10.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReproductorMusica-Beta-0.10
+          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.10.apk
+          if-no-files-found: error
