@@ -308,7 +308,7 @@ public class MainActivity extends Activity {
         LinearLayout heading = new LinearLayout(this);
         heading.setOrientation(LinearLayout.VERTICAL);
         heading.addView(text("REPRODUCTOR DE MÚSICA", 22, C_TEXT, true), matchWrap());
-        heading.addView(text("RADIOENLACE AUDIO  ·  BETA " + "0.7", 11, C_CYAN, true), matchWrap());
+        heading.addView(text("RADIOENLACE AUDIO  ·  BETA " + "0.8", 11, C_CYAN, true), matchWrap());
         root.addView(heading, matchWrap());
 
         outputSummary = text("SALIDA AUTOMÁTICA · PERFIL ESTÁNDAR", 12, C_GREEN, true);

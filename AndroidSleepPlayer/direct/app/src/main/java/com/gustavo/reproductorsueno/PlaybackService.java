@@ -89,6 +89,13 @@ public class PlaybackService extends Service {
     private AudioManager audioManager;
     private AudioFocusRequest focusRequest;
     private AudioDeviceCallback deviceCallback;
+
+    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> {
+        if (change == AudioManager.AUDIOFOCUS_LOSS
+                || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+            pausePlayback(null);
+        }
+    };
     private SharedPreferences statePrefs;
 
     private int currentIndex;
@@ -127,6 +134,15 @@ public class PlaybackService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (audioManager != null && Build.VERSION.SDK_INT >= 26) {
+            focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build())
+                    .setOnAudioFocusChangeListener(focusChangeListener)
+                    .build();
+        }
         statePrefs = getSharedPreferences("reproductor_sueno", MODE_PRIVATE);
         createNotificationChannel();
         registerReceiver(noisyReceiver, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
@@ -591,21 +607,12 @@ public class PlaybackService extends Service {
 
     private void requestAudioFocus() {
         if (audioManager == null) return;
-        AudioManager.OnAudioFocusChangeListener listener = change -> {
-            if (change == AudioManager.AUDIOFOCUS_LOSS
-                    || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) pausePlayback(null);
-        };
         if (Build.VERSION.SDK_INT >= 26) {
-            focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build())
-                    .setOnAudioFocusChangeListener(listener)
-                    .build();
-            audioManager.requestAudioFocus(focusRequest);
-        } else audioManager.requestAudioFocus(listener, AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN);
+            if (focusRequest != null) audioManager.requestAudioFocus(focusRequest);
+        } else {
+            audioManager.requestAudioFocus(focusChangeListener, AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN);
+        }
     }
 
     private void registerDeviceCallback() {
