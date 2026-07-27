@@ -11,7 +11,8 @@ Audio Personal es un reproductor de música local y controlador de volumen para 
 - Activación por la palabra «computadora».
 - Órdenes de reproducción, volumen, mute y apertura o cierre del reproductor.
 - Reconocimiento local y bilingüe mediante Vosk, sin enviar la voz a servicios externos.
-- Tema claro u oscuro de acuerdo con Windows.
+- Apariencia personalizable con color, intensidad, fondo y contraste.
+- Ventanas con esquinas redondeadas en Windows 11.
 - Vista completa y compacta.
 - Inicio automático con Windows.
 
@@ -33,15 +34,9 @@ El catálogo musical, la configuración y los modelos de reconocimiento permanec
 
 También existe un flujo reproducible en GitHub Actions. Cada cambio compila la aplicación y ejecuta las pruebas automáticas de reconocimiento e interpretación de órdenes.
 
-## Política de firma de código (Code signing policy)
+## Firma para Windows
 
-Firma de código gratuita proporcionada por [SignPath.io](https://signpath.io/), certificado de [SignPath Foundation](https://signpath.org/).
-
-- Responsable, mantenedor y revisor: [Gustavo Beitler](https://github.com/gustavobeitler).
-- Aprobador de solicitudes de firma: [Gustavo Beitler](https://github.com/gustavobeitler).
-- Las versiones destinadas a usuarios finales se publicarán únicamente después de incorporar una firma Authenticode válida al ejecutable.
-- Los binarios firmados deben proceder exclusivamente de la compilación automática y pública de este repositorio.
-- Audio Personal no transfiere información a otros sistemas conectados a una red salvo cuando el usuario solicita o autoriza expresamente una operación, como descargar los modelos de reconocimiento de voz desde sus fuentes oficiales.
+El proyecto está preparado para solicitar la firma gratuita de SignPath Foundation. Las versiones destinadas a usuarios finales se publicarán únicamente después de incorporar la firma Authenticode al ejecutable y sus componentes ejecutables.
 
 ## Licencia
 
