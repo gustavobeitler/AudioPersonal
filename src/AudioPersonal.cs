@@ -14,11 +14,11 @@ using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-[assembly: AssemblyTitle("Audio Personal Beta 4.12.3")]
+[assembly: AssemblyTitle("Audio Personal Beta 4.12.4")]
 [assembly: AssemblyProduct("Audio Personal")]
 [assembly: AssemblyDescription("Reproductor local y control de volumen por voz")]
-[assembly: AssemblyVersion("4.12.3.0")]
-[assembly: AssemblyFileVersion("4.12.3.0")]
+[assembly: AssemblyVersion("4.12.4.0")]
+[assembly: AssemblyFileVersion("4.12.4.0")]
 
 namespace AudioPersonal
 {
@@ -63,9 +63,10 @@ namespace AudioPersonal
     {
         const string RegistryPath=@"Software\AudioPersonal\Appearance";
         static int hue=205,intensity=58,background=22,contrast=62;
+        static bool followsWindows=true;
         public static event EventHandler Changed;
         static AppearanceManager(){Load();}
-        public static int Hue{get{return hue;}}public static int Intensity{get{return intensity;}}public static int Background{get{return background;}}public static int Contrast{get{return contrast;}}
+        public static int Hue{get{return hue;}}public static int Intensity{get{return intensity;}}public static int Background{get{return background;}}public static int Contrast{get{return contrast;}}public static bool FollowsWindows{get{return followsWindows;}}
         public static AppearancePalette Palette{get{return CreatePalette(hue,intensity,background,contrast);}}
         public static void SetPreview(int color,int strength,int backdrop,int difference)
         {
@@ -74,12 +75,14 @@ namespace AudioPersonal
         }
         public static void Save()
         {
-            try{using(RegistryKey key=Registry.CurrentUser.CreateSubKey(RegistryPath)){key.SetValue("Color",hue);key.SetValue("Intensidad",intensity);key.SetValue("Fondo",background);key.SetValue("Contraste",contrast);}}catch{}
+            followsWindows=false;try{using(RegistryKey key=Registry.CurrentUser.CreateSubKey(RegistryPath)){key.SetValue("Color",hue);key.SetValue("Intensidad",intensity);key.SetValue("Fondo",background);key.SetValue("Contraste",contrast);key.SetValue("Personalizada",1);}}catch{}
         }
-        public static void Reset(){SetPreview(205,58,22,62);Save();}
+        public static void ResetToWindows(){followsWindows=true;SetPreview(205,58,WindowsUsesDarkMode()?22:91,62);try{using(RegistryKey key=Registry.CurrentUser.CreateSubKey(RegistryPath))key.SetValue("Personalizada",0);}catch{}}
+        public static void RefreshWindowsTheme(){if(followsWindows)SetPreview(hue,intensity,WindowsUsesDarkMode()?22:91,contrast);}
+        static bool WindowsUsesDarkMode(){try{return Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize","AppsUseLightTheme",0))==0;}catch{return true;}}
         static void Load()
         {
-            try{hue=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Color",205));intensity=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Intensidad",58));background=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Fondo",22));contrast=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Contraste",62));}catch{}
+            try{followsWindows=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Personalizada",0))==0;hue=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Color",205));intensity=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Intensidad",58));background=followsWindows?(WindowsUsesDarkMode()?22:91):Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Fondo",22));contrast=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Contraste",62));}catch{}
         }
         public static AppearancePalette CreatePalette(int color,int strength,int backdrop,int difference)
         {
@@ -106,7 +109,11 @@ namespace AudioPersonal
         }
         public static void StyleButton(Button button,AppearancePalette palette)
         {
-            button.FlatStyle=FlatStyle.Flat;button.FlatAppearance.BorderColor=palette.Border;button.BackColor=palette.Surface;button.ForeColor=palette.Text;
+            button.FlatStyle=FlatStyle.Flat;button.FlatAppearance.BorderColor=palette.Border;button.FlatAppearance.BorderSize=1;button.BackColor=palette.Surface;button.ForeColor=palette.Text;ApplyRoundedControl(button,10);
+        }
+        public static void ApplyRoundedControl(Control control,int radius)
+        {
+            if(control==null||control.Width<2||control.Height<2)return;using(GraphicsPath path=new GraphicsPath()){Rectangle bounds=new Rectangle(0,0,control.Width,control.Height);int diameter=Math.Max(2,Math.Min(radius*2,Math.Min(bounds.Width,bounds.Height)));path.AddArc(bounds.Left,bounds.Top,diameter,diameter,180,90);path.AddArc(bounds.Right-diameter,bounds.Top,diameter,diameter,270,90);path.AddArc(bounds.Right-diameter,bounds.Bottom-diameter,diameter,diameter,0,90);path.AddArc(bounds.Left,bounds.Bottom-diameter,diameter,diameter,90,90);path.CloseFigure();Region old=control.Region;control.Region=new Region(path);if(old!=null)old.Dispose();}
         }
     }
 
@@ -122,7 +129,7 @@ namespace AudioPersonal
             AddSlider("Color",color,18,oldColor,0,359);AddSlider("Intensidad",intensity,76,oldIntensity,0,100);AddSlider("Fondo",background,134,oldBackground,4,96);AddSlider("Contraste",contrast,192,oldContrast,0,100);
             preview.SetBounds(22,252,130,48);Controls.Add(preview);
             save.Text="Guardar";save.SetBounds(168,260,78,32);save.Click+=delegate{AppearanceManager.Save();DialogResult=DialogResult.OK;Close();};
-            reset.Text="Restablecer";reset.SetBounds(252,260,88,32);reset.Click+=delegate{color.Value=205;intensity.Value=58;background.Value=22;contrast.Value=62;Preview();};
+            reset.Text="Usar Windows";reset.SetBounds(252,260,88,32);reset.Click+=delegate{AppearanceManager.ResetToWindows();color.Value=AppearanceManager.Hue;intensity.Value=AppearanceManager.Intensity;background.Value=AppearanceManager.Background;contrast.Value=AppearanceManager.Contrast;Preview();};
             cancel.Text="Cancelar";cancel.SetBounds(346,260,72,32);cancel.Click+=delegate{AppearanceManager.SetPreview(oldColor,oldIntensity,oldBackground,oldContrast);DialogResult=DialogResult.Cancel;Close();};
             Controls.AddRange(new Control[]{save,reset,cancel});FormClosing+=delegate(object sender,FormClosingEventArgs e){if(DialogResult!=DialogResult.OK)AppearanceManager.SetPreview(oldColor,oldIntensity,oldBackground,oldContrast);};
             Shown+=delegate{AppearanceManager.ApplyRounded(this);Preview();};
@@ -142,22 +149,23 @@ namespace AudioPersonal
     internal sealed class VolumeForm : Form
     {
         readonly ConsoleFader fader=new ConsoleFader();readonly StereoMeter meter=new StereoMeter();readonly BalanceControl balance=new BalanceControl();
-        readonly Label percent=new Label(),balanceText=new Label(),voiceState=new Label();readonly Button mute=new Button(),minimize=new Button(),music=new Button(),resize=new Button();
+        readonly Label percent=new Label(),balanceText=new Label(),voiceState=new Label();readonly Button mute=new Button(),minimize=new Button(),music=new Button(),resize=new Button(),view=new Button();
         readonly NotifyIcon tray=new NotifyIcon();readonly System.Windows.Forms.Timer refresh=new System.Windows.Forms.Timer(),duckTimer=new System.Windows.Forms.Timer();readonly InternalPlayerEngine playerEngine=new InternalPlayerEngine();AudioDevice audio;MainForm musicForm;PlayerForm playerForm;bool internalChange,forceExit,voiceDucked,compactPanel,synchronizingCompact,movingPair;float volumeBeforeVoice;
         public VolumeForm()
         {
             Text="Audio Personal";FormBorderStyle=FormBorderStyle.None;ClientSize=new Size(174,490);MinimumSize=MaximumSize=Size;StartPosition=FormStartPosition.Manual;TopMost=true;ShowInTaskbar=false;
             Rectangle area=Screen.PrimaryScreen.WorkingArea;Location=new Point(area.Right-Width,area.Top);
             percent.SetBounds(7,10,68,28);percent.TextAlign=ContentAlignment.MiddleCenter;percent.Font=new Font("Segoe UI",11F,FontStyle.Bold);
-            resize.SetBounds(77,8,26,25);resize.FlatStyle=FlatStyle.Flat;resize.Text="▣";resize.Font=new Font("Segoe UI Symbol",10F,FontStyle.Bold);resize.Click+=delegate{SetCombinedCompact(!compactPanel,true);};
-            music.SetBounds(106,8,27,25);music.FlatStyle=FlatStyle.Flat;music.Text="♫";music.Font=new Font("Segoe UI Symbol",13F,FontStyle.Bold);music.Click+=delegate{OpenPlayer();};
-            minimize.SetBounds(137,8,27,25);minimize.FlatStyle=FlatStyle.Flat;minimize.Text="─";minimize.Click+=delegate{Hide();};
+            resize.SetBounds(52,8,26,25);resize.FlatStyle=FlatStyle.Flat;resize.Text="▣";resize.Font=new Font("Segoe UI Symbol",10F,FontStyle.Bold);resize.Click+=delegate{SetCombinedCompact(!compactPanel,true);};
+            view.SetBounds(81,8,45,25);view.FlatStyle=FlatStyle.Flat;view.Text="Ver ▾";view.Font=new Font("Segoe UI",8F);view.Click+=delegate{ShowViewMenu(view);};
+            music.SetBounds(129,8,27,25);music.FlatStyle=FlatStyle.Flat;music.Text="▶";music.Font=new Font("Segoe UI Symbol",10F,FontStyle.Bold);music.AccessibleName="Abrir reproductor";music.Click+=delegate{OpenPlayer();};
+            minimize.SetBounds(158,8,16,25);minimize.FlatStyle=FlatStyle.Flat;minimize.Text="─";minimize.Click+=delegate{Hide();};
             fader.SetBounds(10,47,88,245);fader.ValueChanged+=delegate{if(!internalChange&&audio!=null)audio.Volume=fader.Value/100f;percent.Text=fader.Value+"%";};meter.SetBounds(104,47,60,245);
             balanceText.SetBounds(10,297,154,20);balanceText.Text="BALANCE   C";balanceText.TextAlign=ContentAlignment.MiddleCenter;balanceText.Font=new Font("Segoe UI",8F,FontStyle.Bold);
             balance.SetBounds(17,319,140,32);balance.ValueChanged+=delegate{if(!internalChange&&audio!=null)audio.SetBalance(balance.Value);balanceText.Text=BalanceLabel(balance.Value);};
             mute.SetBounds(44,361,86,34);mute.FlatStyle=FlatStyle.Flat;mute.Font=new Font("Segoe UI",9F,FontStyle.Bold);mute.Text="MUTE";mute.Click+=delegate{if(audio!=null)audio.Muted=!audio.Muted;RefreshAudio();};
             voiceState.SetBounds(9,400,156,80);voiceState.BorderStyle=BorderStyle.FixedSingle;voiceState.TextAlign=ContentAlignment.MiddleCenter;voiceState.Font=new Font("Segoe UI",8F,FontStyle.Bold);voiceState.Text="♫ Preparando voz...";voiceState.Click+=delegate{OpenMusic();};
-            Controls.AddRange(new Control[]{percent,resize,music,minimize,fader,meter,balanceText,balance,mute,voiceState});MouseDown+=DragWindow;percent.MouseDown+=DragWindow;balanceText.MouseDown+=DragWindow;
+            Controls.AddRange(new Control[]{percent,resize,view,music,minimize,fader,meter,balanceText,balance,mute,voiceState});MouseDown+=DragWindow;percent.MouseDown+=DragWindow;balanceText.MouseDown+=DragWindow;
             audio=AudioDevice.TryCreate();if(audio!=null){audio.SetBalance(0);audio.Volume=0.30f;}refresh.Interval=35;refresh.Tick+=delegate{RefreshAudio();};refresh.Start();duckTimer.Interval=12000;duckTimer.Tick+=delegate{RestoreAfterVoice();};
             ContextMenuStrip menu=new ContextMenuStrip();menu.Items.Add("Mostrar reproductor y volumen",null,delegate{ShowPanel();});menu.Items.Add("Configurar voz y catálogo",null,delegate{OpenMusic();});menu.Items.Add("Apariencia...",null,delegate{OpenAppearance();});menu.Items.Add("Salir",null,delegate{forceExit=true;tray.Visible=false;Application.Exit();});
             tray.Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath)??SystemIcons.Application;tray.Text="Audio Personal";tray.ContextMenuStrip=menu;tray.Visible=true;tray.DoubleClick+=delegate{ShowPanel();};
@@ -171,6 +179,7 @@ namespace AudioPersonal
         void ShowPanelOnly(){Show();WindowState=FormWindowState.Normal;Activate();}
         void OpenMusic(){if(musicForm==null||musicForm.IsDisposed)musicForm=new MainForm(UpdateVoiceState,DuckForVoice,RestoreAfterVoice,SetVolumePercent,AdjustVolumePercent,playerEngine,OpenPlayer,ClosePlayer);musicForm.Initialize();musicForm.Show();musicForm.WindowState=FormWindowState.Normal;musicForm.Activate();}
         void OpenAppearance(){using(AppearanceForm dialog=new AppearanceForm())dialog.ShowDialog(this);}
+        void ShowViewMenu(Control owner){ContextMenuStrip menu=new ContextMenuStrip();menu.RenderMode=ToolStripRenderMode.System;menu.Items.Add("Apariencia...",null,delegate{OpenAppearance();});menu.Show(owner,new Point(0,owner.Height));}
         void OpenPlayer(){ShowPanelOnly();OpenPlayerOnly();}
         void ClosePlayer(){playerEngine.Stop();if(playerForm!=null&&!playerForm.IsDisposed)playerForm.Hide();}
         void OpenPlayerOnly(){bool wasVisible=playerForm!=null&&!playerForm.IsDisposed&&playerForm.Visible;if(playerForm==null||playerForm.IsDisposed){playerForm=new PlayerForm(playerEngine);playerForm.CompactModeChanged+=delegate{if(!synchronizingCompact)SetCombinedCompact(playerForm.CompactMode,true);};playerForm.ApplyCompact(compactPanel,true);playerForm.LocationChanged+=delegate{if(playerForm.Visible&&!movingPair)MovePairFromPlayer();};playerForm.SizeChanged+=delegate{if(playerForm.Visible&&!movingPair)MovePairFromPlayer();};}if(!wasVisible)playerForm.Location=new Point(Left-playerForm.Width,Top);playerForm.Show();playerForm.WindowState=FormWindowState.Normal;if(wasVisible)MovePairFromPlayer();else MovePairFromPanel();playerForm.Activate();}
@@ -189,9 +198,9 @@ namespace AudioPersonal
         static int ExpectedPlayerHeight(bool compact){return (compact?185:640)+SystemInformation.CaptionHeight+SystemInformation.FixedFrameBorderSize.Height*2;}
         void SetPanelHeight(int height){height=Math.Max(compactPanel?205:490,height);MinimumSize=Size.Empty;MaximumSize=Size.Empty;Size=new Size(174,height);if(compactPanel){fader.SetBounds(20,40,45,125);meter.SetBounds(94,40,60,125);balanceText.Visible=balance.Visible=false;mute.SetBounds(44,170,86,27);voiceState.SetBounds(9,201,156,Math.Max(9,height-205));}else{int statusY=height-90,muteY=height-129,balanceY=height-171,balanceLabelY=height-193;fader.SetBounds(10,47,88,Math.Max(245,balanceLabelY-52));meter.SetBounds(104,47,60,Math.Max(245,balanceLabelY-52));balanceText.SetBounds(10,balanceLabelY,154,20);balance.SetBounds(17,balanceY,140,32);balanceText.Visible=balance.Visible=true;mute.SetBounds(44,muteY,86,34);voiceState.SetBounds(9,statusY,156,80);}MinimumSize=MaximumSize=Size;if(IsHandleCreated)AppearanceManager.ApplyRounded(this);}
         void RefreshAudio(){if(audio==null)return;int value=Math.Max(0,Math.Min(100,(int)Math.Round(audio.Volume*100)));internalChange=true;fader.Value=value;percent.Text=value+"%";mute.Text=audio.Muted||value==0?"MUTE ●":"MUTE";mute.BackColor=audio.Muted?Color.FromArgb(190,45,45):BackColor;float l,r;audio.GetPeaks(out l,out r);meter.SetLevels(l,r);internalChange=false;}
-        void ApplyTheme(){AppearancePalette palette=AppearanceManager.Palette;BackColor=palette.Background;ForeColor=palette.Text;foreach(Control c in Controls){c.BackColor=palette.Background;c.ForeColor=palette.Text;}foreach(Button button in new[]{mute,minimize,music,resize})AppearanceManager.StyleButton(button,palette);fader.DarkTheme=meter.DarkTheme=balance.DarkTheme=palette.Dark;Invalidate(true);}
+        void ApplyTheme(){AppearancePalette palette=AppearanceManager.Palette;BackColor=palette.Background;ForeColor=palette.Text;foreach(Control c in Controls){c.BackColor=palette.Background;c.ForeColor=palette.Text;}foreach(Button button in new[]{mute,minimize,music,resize,view})AppearanceManager.StyleButton(button,palette);AppearanceManager.ApplyRoundedControl(voiceState,12);fader.DarkTheme=meter.DarkTheme=balance.DarkTheme=palette.Dark;Invalidate(true);}
         void AppearanceChanged(object sender,EventArgs e){ApplyTheme();}
-        void ThemeChanged(object sender,UserPreferenceChangedEventArgs e){ApplyTheme();}void DragWindow(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){Native.ReleaseCapture();Native.SendMessage(Handle,0xA1,new IntPtr(2),IntPtr.Zero);}}
+        void ThemeChanged(object sender,UserPreferenceChangedEventArgs e){AppearanceManager.RefreshWindowsTheme();ApplyTheme();}void DragWindow(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){Native.ReleaseCapture();Native.SendMessage(Handle,0xA1,new IntPtr(2),IntPtr.Zero);}}
         protected override void Dispose(bool disposing){if(disposing){RestoreAfterVoice();refresh.Dispose();duckTimer.Dispose();tray.Dispose();if(audio!=null)audio.Dispose();if(musicForm!=null)musicForm.Dispose();if(playerForm!=null)playerForm.Dispose();playerEngine.Dispose();SystemEvents.UserPreferenceChanged-=ThemeChanged;AppearanceManager.Changed-=AppearanceChanged;}base.Dispose(disposing);}
     }
 
@@ -251,7 +260,7 @@ namespace AudioPersonal
         readonly TextBox transcript = new TextBox(), musicFolder = new TextBox(), player = new TextBox();
         readonly ProgressBar progress = new ProgressBar();
         readonly ComboBox microphones = new ComboBox();
-        readonly Button install = new Button(), start = new Button(), stop = new Button();
+        readonly Button install = new Button(), start = new Button(), stop = new Button(), viewButton = new Button();
         readonly Button chooseFolder = new Button(), indexMusic = new Button(), choosePlayer = new Button(), defaultPlayer = new Button();
         readonly CheckBox executeCommands = new CheckBox();
         readonly MusicCatalog catalog = new MusicCatalog();
@@ -281,8 +290,8 @@ namespace AudioPersonal
             Text = "Audio Personal - Configuración";
             ClientSize = new Size(860, 675); StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 10F); MinimumSize = new Size(760, 610);
-            MainMenu viewMenu=new MainMenu();MenuItem view=new MenuItem("Ver");view.MenuItems.Add(new MenuItem("Apariencia...",delegate{using(AppearanceForm dialog=new AppearanceForm())dialog.ShowDialog(this);}));viewMenu.MenuItems.Add(view);Menu=viewMenu;
-            Label title = NewLabel("Audio Personal — catálogo y reproducción por voz", 20, 14, 820, 34);
+            viewButton.Text="Ver ▾";viewButton.SetBounds(20,16,58,30);viewButton.Click+=delegate{ContextMenuStrip menu=new ContextMenuStrip();menu.Items.Add("Apariencia...",null,delegate{using(AppearanceForm dialog=new AppearanceForm())dialog.ShowDialog(this);});menu.Show(viewButton,new Point(0,viewButton.Height));};
+            Label title = NewLabel("Audio Personal — catálogo y reproducción por voz", 88, 14, 752, 34);
             title.Font = new Font("Segoe UI", 15F, FontStyle.Bold);
             status.Text = Installer.Ready ? "Reconocimiento bilingüe instalado." : "Falta instalar el reconocimiento bilingüe.";
             status.SetBounds(20, 54, 820, 44); status.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -320,7 +329,7 @@ namespace AudioPersonal
             transcript.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             transcript.Text = "Actividad de Audio Personal:\r\n";
 
-            Controls.AddRange(new Control[] { title, status, progress, install, start, stop, executeCommands,
+            Controls.AddRange(new Control[] { viewButton, title, status, progress, install, start, stop, executeCommands,
                 micLabel, microphones, folderLabel, musicFolder, chooseFolder, indexMusic, playerLabel, player,
                 choosePlayer, defaultPlayer, catalogStatus, partial, transcript });
             AppearanceManager.Changed+=AppearanceChanged;ApplyAppearance();
@@ -338,7 +347,8 @@ namespace AudioPersonal
             {
                 Button button=control as Button;if(button!=null){AppearanceManager.StyleButton(button,palette);continue;}
                 control.ForeColor=palette.Text;if(control is Label||control is CheckBox)control.BackColor=palette.Background;
-                else if(control is TextBox||control is ComboBox){control.BackColor=palette.Surface;control.ForeColor=palette.Text;}
+                else if(control is TextBox||control is ComboBox){control.BackColor=palette.Surface;control.ForeColor=palette.Text;AppearanceManager.ApplyRoundedControl(control,8);}
+                if(control is Label&&control.BorderStyle!=BorderStyle.None)AppearanceManager.ApplyRoundedControl(control,10);
             }
             Invalidate(true);
         }
@@ -612,7 +622,7 @@ namespace AudioPersonal
             if (File.Exists(temporary)) File.Delete(temporary);
             using (WebClient client = new WebClient())
             {
-                client.Headers.Add("User-Agent", "AudioPersonal/4.12.3-beta");
+                client.Headers.Add("User-Agent", "AudioPersonal/4.12.4-beta");
                 client.DownloadProgressChanged += delegate(object sender, DownloadProgressChangedEventArgs e)
                 {
                     report(from + ((to - from) * e.ProgressPercentage / 100),

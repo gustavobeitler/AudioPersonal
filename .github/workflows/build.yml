@@ -34,12 +34,12 @@ jobs:
       - name: Preparar paquete verificable
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path release | Out-Null
-          Copy-Item bin\x64\Release\net48\AudioPersonal.exe release\
-          Copy-Item bin\x64\Release\net48\AudioPersonal.exe.config release\
-          Copy-Item bin\x64\Release\net48\NAudio.dll release\
-          Copy-Item README.md,LICENSE,THIRD-PARTY-NOTICES.md release\
-          Compress-Archive -Path release\* -DestinationPath AudioPersonal-${{ github.ref_name }}-unsigned.zip -Force
+          New-Item -ItemType Directory -Force -Path "release\Audio Personal" | Out-Null
+          Copy-Item bin\x64\Release\net48\AudioPersonal.exe "release\Audio Personal\"
+          Copy-Item bin\x64\Release\net48\AudioPersonal.exe.config "release\Audio Personal\"
+          Copy-Item bin\x64\Release\net48\NAudio.dll "release\Audio Personal\"
+          Copy-Item README.md,LICENSE,THIRD-PARTY-NOTICES.md "release\Audio Personal\"
+          Compress-Archive -Path "release\Audio Personal" -DestinationPath AudioPersonal-${{ github.ref_name }}-unsigned.zip -Force
 
       - name: Publicar artefacto de compilación
         uses: actions/upload-artifact@v4

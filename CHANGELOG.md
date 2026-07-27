@@ -1,5 +1,14 @@
 # Historial de cambios
 
+## 4.12.4 beta
+
+- Sustituido el menú clásico por un botón visible `Ver ▾` dentro del reproductor y del panel de volumen.
+- Estilo visual común con RadioEnlace: botones, sectores y controles con esquinas redondeadas.
+- El botón para abrir el reproductor utiliza ahora un símbolo de reproducción claramente reconocible.
+- La apariencia inicial sigue automáticamente el modo claro u oscuro configurado en Windows.
+- `Usar Windows` restaura el seguimiento automático del tema del sistema.
+- Limpieza de referencias visuales y numeración pertenecientes a versiones anteriores.
+
 ## 4.12.3 beta
 
 - El balance conserva el volumen maestro en lugar de elevarlo al 100 %.

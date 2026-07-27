@@ -1,6 +1,6 @@
 # Audio Personal
 
-Audio Personal es un reproductor de música local y controlador de volumen para Windows, diseñado para manejar una biblioteca musical propia mediante voz.
+Audio Personal 4.12.4 beta es un reproductor de música local y controlador de volumen para Windows, diseñado para manejar una biblioteca musical propia mediante voz.
 
 ## Funciones principales
 

@@ -495,7 +495,7 @@ namespace AudioPersonal
         readonly Label title = new Label(), time = new Label(), eqValue = new Label();
         readonly TimelineFader position = new TimelineFader();
         readonly ListBox list = new ListBox();
-        readonly Button play = new Button(), previous = new Button(), next = new Button(), stop = new Button(), bass = new Button(), treble = new Button(), eqToggle = new Button(), compactButton = new Button();
+        readonly Button play = new Button(), previous = new Button(), next = new Button(), stop = new Button(), bass = new Button(), treble = new Button(), eqToggle = new Button(), compactButton = new Button(), viewButton = new Button();
         readonly CheckBox shuffle = new CheckBox();
         readonly EqualizerFader[] bands = new EqualizerFader[10];
         readonly PlayerLevelMeter meter = new PlayerLevelMeter();
@@ -509,8 +509,8 @@ namespace AudioPersonal
         {
             this.engine = engine; Text = "Audio Personal — Reproductor";AutoScaleMode=AutoScaleMode.None;ClientSize = new Size(790, 640);StartPosition = FormStartPosition.Manual;FormBorderStyle=FormBorderStyle.FixedSingle;MaximizeBox=false;
             Font = new Font("Segoe UI", 9F); Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-            MainMenu viewMenu=new MainMenu();MenuItem view=new MenuItem("Ver");view.MenuItems.Add(new MenuItem("Apariencia...",delegate{using(AppearanceForm dialog=new AppearanceForm())dialog.ShowDialog(this);}));viewMenu.MenuItems.Add(view);Menu=viewMenu;
-            title.SetBounds(18, 12, 714, 36); title.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;title.Font = new Font("Segoe UI", 13F, FontStyle.Bold); title.TextAlign = ContentAlignment.MiddleCenter; title.ForeColor = Color.FromArgb(126, 230, 145);
+            title.SetBounds(78, 12, 654, 36); title.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;title.Font = new Font("Segoe UI", 13F, FontStyle.Bold); title.TextAlign = ContentAlignment.MiddleCenter; title.ForeColor = Color.FromArgb(126, 230, 145);
+            viewButton.Text="Ver ▾";viewButton.SetBounds(18,15,56,28);viewButton.Click+=delegate{ContextMenuStrip menu=new ContextMenuStrip();menu.Items.Add("Apariencia...",null,delegate{using(AppearanceForm dialog=new AppearanceForm())dialog.ShowDialog(this);});menu.Show(viewButton,new Point(0,viewButton.Height));};
             compactButton.Text="▣";compactButton.SetBounds(742,15,30,28);compactButton.Anchor=AnchorStyles.Top|AnchorStyles.Right;compactButton.Click+=delegate{SetCompact(!compactMode,true);EventHandler handler=CompactModeChanged;if(handler!=null)handler(this,EventArgs.Empty);};
             meter.SetBounds(18, 52, 754, 34);meter.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;
             position.SetBounds(18, 94, 650, 26); position.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -557,7 +557,7 @@ namespace AudioPersonal
             }
             Label hint = NewLabel("Doble clic para reproducir. También puede arrastrar canciones desde el Explorador.", 18, 614, 754, 20); hint.TextAlign = ContentAlignment.MiddleCenter; hint.ForeColor = Color.Silver;
 
-            Controls.AddRange(new Control[] { title,compactButton,meter, position, time, previous, play, stop, next, shuffle, addFiles, addFolder, open, playlistActions, list, equalizer, eqToggle, bass, treble, reset, remove, clear, eqValue, hint });
+            Controls.AddRange(new Control[] { title,viewButton,compactButton,meter, position, time, previous, play, stop, next, shuffle, addFiles, addFolder, open, playlistActions, list, equalizer, eqToggle, bass, treble, reset, remove, clear, eqValue, hint });
             detailControls.AddRange(new Control[]{addFiles,addFolder,open,playlistActions,list,equalizer,eqToggle,bass,treble,reset,remove,clear,eqValue,hint});
             foreach (Control control in Controls) if (control is Button) StyleButton((Button)control);
             AppearanceManager.Changed+=AppearanceChanged;ApplyAppearance();
@@ -575,7 +575,7 @@ namespace AudioPersonal
         void AppearanceChanged(object sender,EventArgs e){ApplyAppearance();}
         void ApplyAppearance()
         {
-            AppearancePalette palette=AppearanceManager.Palette;BackColor=palette.Background;ForeColor=palette.Text;title.ForeColor=palette.Accent;list.BackColor=palette.Dark?Darken(palette.Background,18):Darken(palette.Background,7);list.ForeColor=palette.Text;
+            AppearancePalette palette=AppearanceManager.Palette;BackColor=palette.Background;ForeColor=palette.Text;title.ForeColor=palette.Accent;list.BackColor=palette.Dark?Darken(palette.Background,18):Darken(palette.Background,7);list.ForeColor=palette.Text;AppearanceManager.ApplyRoundedControl(list,12);
             foreach(Control control in Controls){Button button=control as Button;if(button!=null)AppearanceManager.StyleButton(button,palette);else if(control is Label||control is CheckBox){control.BackColor=palette.Background;control.ForeColor=palette.Text;}}
             Invalidate(true);
         }
