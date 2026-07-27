@@ -6,6 +6,11 @@ on:
     paths:
       - "android-player/**"
       - ".github/workflows/android-player-build.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "android-player/**"
+      - ".github/workflows/android-player-build.yml"
   workflow_dispatch:
 
 jobs:
