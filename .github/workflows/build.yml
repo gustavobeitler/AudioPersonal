@@ -39,13 +39,13 @@ jobs:
           Copy-Item bin\x64\Release\net48\AudioPersonal.exe.config "release\Audio Personal\"
           Copy-Item bin\x64\Release\net48\NAudio.dll "release\Audio Personal\"
           Copy-Item README.md,LICENSE,THIRD-PARTY-NOTICES.md "release\Audio Personal\"
-          Compress-Archive -Path "release\Audio Personal" -DestinationPath AudioPersonal-5.0-beta.zip -Force
+          Compress-Archive -Path "release\Audio Personal" -DestinationPath AudioPersonal-5.1-beta.zip -Force
 
       - name: Verificar paquete final
         shell: pwsh
         run: |
           Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $zip = [System.IO.Compression.ZipFile]::OpenRead("${{ github.workspace }}\AudioPersonal-5.0-beta.zip")
+          $zip = [System.IO.Compression.ZipFile]::OpenRead("${{ github.workspace }}\AudioPersonal-5.1-beta.zip")
           try {
             $names = @($zip.Entries | ForEach-Object FullName)
             if ($names.Count -lt 6) { throw "El ZIP está incompleto." }
@@ -59,6 +59,6 @@ jobs:
       - name: Publicar artefacto de compilación
         uses: actions/upload-artifact@v4
         with:
-          name: AudioPersonal-5.0-beta
-          path: AudioPersonal-5.0-beta.zip
+          name: AudioPersonal-5.1-beta
+          path: AudioPersonal-5.1-beta.zip
           if-no-files-found: error

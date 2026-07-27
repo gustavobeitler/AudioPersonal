@@ -1,5 +1,15 @@
 # Historial de cambios
 
+## 5.1 beta
+
+- El reproductor y el panel grande de volumen quedan unidos, sin separación visual, y con el borde inferior alineado.
+- El panel grande ya no muestra `Ver`; el espacio superior se aprovecha para controles de tamaño, reproductor y minimizar más grandes.
+- El botón del reproductor utiliza un símbolo musical claro y una ayuda descriptiva.
+- `Ver` abre directamente la ventana Apariencia, sin un paso intermedio llamado `Apariencia`.
+- Los tres botones inferiores de Apariencia quedan centrados y alineados en una sola fila.
+- El rango de personalización, las superficies coloreadas y los botones redondeados adoptan el lenguaje violeta de RadioEnlace.
+- La marca del potenciómetro grande utiliza el mismo amarillo y rojo intenso de los potenciómetros del ecualizador.
+
 ## 5.0 beta
 
 - Consolidado el nuevo lenguaje visual común con RadioEnlace.

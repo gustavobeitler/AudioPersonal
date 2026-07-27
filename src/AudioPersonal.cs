@@ -14,11 +14,11 @@ using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-[assembly: AssemblyTitle("Audio Personal 5.0 Beta")]
+[assembly: AssemblyTitle("Audio Personal 5.1 Beta")]
 [assembly: AssemblyProduct("Audio Personal")]
 [assembly: AssemblyDescription("Reproductor local y control de volumen por voz")]
-[assembly: AssemblyVersion("5.0.0.0")]
-[assembly: AssemblyFileVersion("5.0.0.0")]
+[assembly: AssemblyVersion("5.1.0.0")]
+[assembly: AssemblyFileVersion("5.1.0.0")]
 
 namespace AudioPersonal
 {
@@ -71,7 +71,7 @@ namespace AudioPersonal
     internal static class AppearanceManager
     {
         const string RegistryPath=@"Software\AudioPersonal\Appearance";
-        static int hue=205,intensity=58,background=22,contrast=62;
+        static int hue=270,intensity=68,background=22,contrast=68;
         static bool followsWindows=true;
         public static event EventHandler Changed;
         static AppearanceManager(){Load();}
@@ -86,19 +86,19 @@ namespace AudioPersonal
         {
             followsWindows=false;try{using(RegistryKey key=Registry.CurrentUser.CreateSubKey(RegistryPath)){key.SetValue("Color",hue);key.SetValue("Intensidad",intensity);key.SetValue("Fondo",background);key.SetValue("Contraste",contrast);key.SetValue("Personalizada",1);}}catch{}
         }
-        public static void ResetToWindows(){followsWindows=true;SetPreview(205,58,WindowsTheme.BackgroundLevel(),62);try{using(RegistryKey key=Registry.CurrentUser.CreateSubKey(RegistryPath))key.SetValue("Personalizada",0);}catch{}}
+        public static void ResetToWindows(){followsWindows=true;SetPreview(270,68,WindowsTheme.BackgroundLevel(),68);try{using(RegistryKey key=Registry.CurrentUser.CreateSubKey(RegistryPath))key.SetValue("Personalizada",0);}catch{}}
         public static void RestorePreview(int color,int strength,int backdrop,int difference,bool followWindows){followsWindows=followWindows;SetPreview(color,strength,backdrop,difference);}
         public static void RefreshWindowsTheme(){if(followsWindows)SetPreview(hue,intensity,WindowsTheme.BackgroundLevel(),contrast);}
         static void Load()
         {
-            try{followsWindows=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Personalizada",0))==0;hue=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Color",205));intensity=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Intensidad",58));background=followsWindows?WindowsTheme.BackgroundLevel():Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Fondo",22));contrast=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Contraste",62));}catch{}
+            try{followsWindows=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Personalizada",0))==0;hue=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Color",270));intensity=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Intensidad",68));background=followsWindows?WindowsTheme.BackgroundLevel():Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Fondo",22));contrast=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Contraste",68));}catch{}
         }
         public static AppearancePalette CreatePalette(int color,int strength,int backdrop,int difference)
         {
-            double light=backdrop/100.0,saturation=strength/100.0;Color bg=FromHsl(color,saturation*.22,light);
-            double direction=light<.52?1:-1;double surfaceLight=Math.Max(.02,Math.Min(.98,light+direction*(.035+.09*difference/100.0)));
+            double light=backdrop/100.0,saturation=.12+.82*strength/100.0;Color bg=FromHsl(color,saturation*.34,light);
+            double direction=light<.52?1:-1;double surfaceLight=Math.Max(.02,Math.Min(.98,light+direction*(.045+.11*difference/100.0)));
             double textLight=light<.52?.80+.18*difference/100.0:.20-.16*difference/100.0;
-            return new AppearancePalette{Background=bg,Surface=FromHsl(color,saturation*.27,surfaceLight),Text=FromHsl(color,saturation*.08,Math.Max(.04,Math.Min(.97,textLight))),Border=FromHsl(color,saturation*.35,Math.Max(.08,Math.Min(.92,surfaceLight+direction*.16))),Accent=FromHsl(color,Math.Max(.35,saturation),light<.52?.57:.38),Dark=light<.52};
+            return new AppearancePalette{Background=bg,Surface=FromHsl(color,saturation*.52,surfaceLight),Text=FromHsl(color,saturation*.06,Math.Max(.04,Math.Min(.97,textLight))),Border=FromHsl(color,saturation*.72,Math.Max(.08,Math.Min(.92,surfaceLight+direction*.16))),Accent=FromHsl(color,Math.Max(.62,saturation),light<.52?.61:.36),Dark=light<.52};
         }
         static Color FromHsl(double h,double s,double l)
         {
@@ -118,7 +118,7 @@ namespace AudioPersonal
         }
         public static void StyleButton(Button button,AppearancePalette palette)
         {
-            button.FlatStyle=FlatStyle.Flat;button.FlatAppearance.BorderColor=palette.Border;button.FlatAppearance.BorderSize=1;button.BackColor=palette.Surface;button.ForeColor=palette.Text;ApplyRoundedControl(button,10);
+            button.UseVisualStyleBackColor=false;button.FlatStyle=FlatStyle.Flat;button.FlatAppearance.BorderSize=0;button.FlatAppearance.MouseOverBackColor=palette.Border;button.FlatAppearance.MouseDownBackColor=palette.Accent;button.BackColor=palette.Surface;button.ForeColor=palette.Text;ApplyRoundedControl(button,10);
         }
         public static void ApplyRoundedControl(Control control,int radius)
         {
@@ -129,28 +129,29 @@ namespace AudioPersonal
     internal sealed class AppearanceForm:Form
     {
         readonly TrackBar color=new TrackBar(),intensity=new TrackBar(),background=new TrackBar(),contrast=new TrackBar();
-        readonly Panel preview=new Panel();readonly Button save=new Button(),reset=new Button(),cancel=new Button();
+        readonly Panel preview=new Panel();readonly Label previewLabel=new Label();readonly Button save=new Button(),reset=new Button(),cancel=new Button();
         readonly int oldColor,oldIntensity,oldBackground,oldContrast;readonly bool oldFollowsWindows;bool useWindows,updating;
         public AppearanceForm()
         {
             oldColor=AppearanceManager.Hue;oldIntensity=AppearanceManager.Intensity;oldBackground=AppearanceManager.Background;oldContrast=AppearanceManager.Contrast;oldFollowsWindows=AppearanceManager.FollowsWindows;useWindows=oldFollowsWindows;
-            Text="Apariencia";ClientSize=new Size(430,330);FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=MinimizeBox=false;ShowInTaskbar=false;StartPosition=FormStartPosition.CenterParent;Font=new Font("Segoe UI",9F);
-            AddSlider("Color",color,18,oldColor,0,359);AddSlider("Intensidad",intensity,76,oldIntensity,0,100);AddSlider("Fondo",background,134,oldBackground,4,96);AddSlider("Contraste",contrast,192,oldContrast,0,100);
-            preview.SetBounds(22,252,130,48);Controls.Add(preview);
-            save.Text="Guardar";save.SetBounds(168,260,78,32);save.Click+=delegate{if(useWindows)AppearanceManager.ResetToWindows();else AppearanceManager.Save();DialogResult=DialogResult.OK;Close();};
-            reset.Text="Usar Windows";reset.SetBounds(252,260,88,32);reset.Click+=delegate{updating=true;color.Value=205;intensity.Value=58;background.Value=WindowsTheme.BackgroundLevel();contrast.Value=62;updating=false;useWindows=true;Preview();};
-            cancel.Text="Cancelar";cancel.SetBounds(346,260,72,32);cancel.Click+=delegate{AppearanceManager.RestorePreview(oldColor,oldIntensity,oldBackground,oldContrast,oldFollowsWindows);DialogResult=DialogResult.Cancel;Close();};
-            Controls.AddRange(new Control[]{save,reset,cancel});FormClosing+=delegate(object sender,FormClosingEventArgs e){if(DialogResult!=DialogResult.OK)AppearanceManager.RestorePreview(oldColor,oldIntensity,oldBackground,oldContrast,oldFollowsWindows);};
+            Text="Apariencia";ClientSize=new Size(450,342);FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=MinimizeBox=false;ShowInTaskbar=false;StartPosition=FormStartPosition.CenterParent;Font=new Font("Segoe UI",9F);
+            AddSlider("Color",color,20,oldColor,0,359);AddSlider("Intensidad",intensity,76,oldIntensity,0,100);AddSlider("Fondo",background,132,oldBackground,4,96);AddSlider("Contraste",contrast,188,oldContrast,0,100);
+            previewLabel.Text="VISTA PREVIA";previewLabel.Font=new Font("Segoe UI",8F,FontStyle.Bold);previewLabel.TextAlign=ContentAlignment.MiddleLeft;previewLabel.SetBounds(22,250,92,28);
+            preview.SetBounds(116,252,70,24);Controls.AddRange(new Control[]{previewLabel,preview});
+            save.Text="Guardar";save.SetBounds(80,292,86,34);save.Click+=delegate{if(useWindows)AppearanceManager.ResetToWindows();else AppearanceManager.Save();DialogResult=DialogResult.OK;Close();};
+            reset.Text="Usar Windows";reset.SetBounds(174,292,104,34);reset.Click+=delegate{updating=true;color.Value=270;intensity.Value=68;background.Value=WindowsTheme.BackgroundLevel();contrast.Value=68;updating=false;useWindows=true;Preview();};
+            cancel.Text="Cancelar";cancel.SetBounds(286,292,86,34);cancel.Click+=delegate{AppearanceManager.RestorePreview(oldColor,oldIntensity,oldBackground,oldContrast,oldFollowsWindows);DialogResult=DialogResult.Cancel;Close();};
+            Controls.AddRange(new Control[]{save,reset,cancel});AcceptButton=save;CancelButton=cancel;FormClosing+=delegate(object sender,FormClosingEventArgs e){if(DialogResult!=DialogResult.OK)AppearanceManager.RestorePreview(oldColor,oldIntensity,oldBackground,oldContrast,oldFollowsWindows);};
             Shown+=delegate{AppearanceManager.ApplyRounded(this);Preview();};
         }
         void AddSlider(string text,TrackBar slider,int y,int value,int minimum,int maximum)
         {
-            Label label=new Label();label.Text=text;label.SetBounds(20,y,90,24);slider.SetBounds(108,y-5,304,45);slider.Minimum=minimum;slider.Maximum=maximum;slider.TickFrequency=Math.Max(1,(maximum-minimum)/10);slider.Value=Math.Max(minimum,Math.Min(maximum,value));slider.ValueChanged+=delegate{if(!updating)useWindows=false;Preview();};Controls.Add(label);Controls.Add(slider);
+            Label label=new Label();label.Text=text;label.Font=new Font("Segoe UI",9F,FontStyle.Bold);label.SetBounds(22,y,92,26);slider.SetBounds(112,y-4,316,45);slider.Minimum=minimum;slider.Maximum=maximum;slider.TickStyle=TickStyle.None;slider.Value=Math.Max(minimum,Math.Min(maximum,value));slider.ValueChanged+=delegate{if(!updating)useWindows=false;Preview();};Controls.Add(label);Controls.Add(slider);
         }
         void Preview()
         {
             AppearanceManager.SetPreview(color.Value,intensity.Value,background.Value,contrast.Value);AppearancePalette p=AppearanceManager.Palette;BackColor=p.Background;ForeColor=p.Text;preview.BackColor=p.Surface;
-            foreach(Control control in Controls){if(control is Label){control.BackColor=p.Background;control.ForeColor=p.Text;}Button button=control as Button;if(button!=null)AppearanceManager.StyleButton(button,p);}
+            foreach(Control control in Controls){if(control is Label||control is TrackBar){control.BackColor=p.Background;control.ForeColor=p.Text;}Button button=control as Button;if(button!=null)AppearanceManager.StyleButton(button,p);}AppearanceManager.ApplyRoundedControl(preview,8);
             preview.Invalidate();
         }
     }
@@ -158,23 +159,23 @@ namespace AudioPersonal
     internal sealed class VolumeForm : Form
     {
         readonly ConsoleFader fader=new ConsoleFader();readonly StereoMeter meter=new StereoMeter();readonly BalanceControl balance=new BalanceControl();
-        readonly Label percent=new Label(),balanceText=new Label(),voiceState=new Label();readonly Button mute=new Button(),minimize=new Button(),music=new Button(),resize=new Button(),view=new Button();
+        readonly Label percent=new Label(),balanceText=new Label(),voiceState=new Label();readonly Button mute=new Button(),minimize=new Button(),music=new Button(),resize=new Button();
         readonly NotifyIcon tray=new NotifyIcon();readonly System.Windows.Forms.Timer refresh=new System.Windows.Forms.Timer(),duckTimer=new System.Windows.Forms.Timer();readonly InternalPlayerEngine playerEngine=new InternalPlayerEngine();AudioDevice audio;MainForm musicForm;PlayerForm playerForm;bool internalChange,forceExit,voiceDucked,compactPanel,synchronizingCompact,movingPair;float volumeBeforeVoice;
         public VolumeForm()
         {
             Text="Audio Personal";FormBorderStyle=FormBorderStyle.None;ClientSize=new Size(174,490);MinimumSize=MaximumSize=Size;StartPosition=FormStartPosition.Manual;TopMost=true;ShowInTaskbar=false;
             Rectangle area=Screen.PrimaryScreen.WorkingArea;Location=new Point(area.Right-Width,area.Top);
-            percent.SetBounds(7,10,68,28);percent.TextAlign=ContentAlignment.MiddleCenter;percent.Font=new Font("Segoe UI",11F,FontStyle.Bold);
-            resize.SetBounds(52,8,26,25);resize.FlatStyle=FlatStyle.Flat;resize.Text="▣";resize.Font=new Font("Segoe UI Symbol",10F,FontStyle.Bold);resize.Click+=delegate{SetCombinedCompact(!compactPanel,true);};
-            view.SetBounds(81,8,45,25);view.FlatStyle=FlatStyle.Flat;view.Text="Ver ▾";view.Font=new Font("Segoe UI",8F);view.Click+=delegate{ShowViewMenu(view);};
-            music.SetBounds(129,8,27,25);music.FlatStyle=FlatStyle.Flat;music.Text="▶";music.Font=new Font("Segoe UI Symbol",10F,FontStyle.Bold);music.AccessibleName="Abrir reproductor";music.Click+=delegate{OpenPlayer();};
-            minimize.SetBounds(158,8,16,25);minimize.FlatStyle=FlatStyle.Flat;minimize.Text="─";minimize.Click+=delegate{Hide();};
+            percent.SetBounds(7,10,58,30);percent.TextAlign=ContentAlignment.MiddleCenter;percent.Font=new Font("Segoe UI",11F,FontStyle.Bold);
+            resize.SetBounds(68,7,31,30);resize.Text="▣";resize.Font=new Font("Segoe UI Symbol",11F,FontStyle.Bold);resize.AccessibleName="Cambiar tamaño";resize.Click+=delegate{SetCombinedCompact(!compactPanel,true);};
+            music.SetBounds(103,7,31,30);music.Text="♫";music.Font=new Font("Segoe UI Symbol",12F,FontStyle.Bold);music.AccessibleName="Abrir reproductor";music.Click+=delegate{OpenPlayer();};
+            minimize.SetBounds(138,7,31,30);minimize.Text="─";minimize.Font=new Font("Segoe UI",11F,FontStyle.Bold);minimize.AccessibleName="Minimizar";minimize.Click+=delegate{Hide();};
             fader.SetBounds(10,47,88,245);fader.ValueChanged+=delegate{if(!internalChange&&audio!=null)audio.Volume=fader.Value/100f;percent.Text=fader.Value+"%";};meter.SetBounds(104,47,60,245);
             balanceText.SetBounds(10,297,154,20);balanceText.Text="BALANCE   C";balanceText.TextAlign=ContentAlignment.MiddleCenter;balanceText.Font=new Font("Segoe UI",8F,FontStyle.Bold);
             balance.SetBounds(17,319,140,32);balance.ValueChanged+=delegate{if(!internalChange&&audio!=null)audio.SetBalance(balance.Value);balanceText.Text=BalanceLabel(balance.Value);};
             mute.SetBounds(44,361,86,34);mute.FlatStyle=FlatStyle.Flat;mute.Font=new Font("Segoe UI",9F,FontStyle.Bold);mute.Text="MUTE";mute.Click+=delegate{if(audio!=null)audio.Muted=!audio.Muted;RefreshAudio();};
             voiceState.SetBounds(9,400,156,80);voiceState.BorderStyle=BorderStyle.FixedSingle;voiceState.TextAlign=ContentAlignment.MiddleCenter;voiceState.Font=new Font("Segoe UI",8F,FontStyle.Bold);voiceState.Text="♫ Preparando voz...";voiceState.Click+=delegate{OpenMusic();};
-            Controls.AddRange(new Control[]{percent,resize,view,music,minimize,fader,meter,balanceText,balance,mute,voiceState});MouseDown+=DragWindow;percent.MouseDown+=DragWindow;balanceText.MouseDown+=DragWindow;
+            Controls.AddRange(new Control[]{percent,resize,music,minimize,fader,meter,balanceText,balance,mute,voiceState});MouseDown+=DragWindow;percent.MouseDown+=DragWindow;balanceText.MouseDown+=DragWindow;
+            ToolTip tips=new ToolTip();tips.SetToolTip(resize,"Cambiar tamaño");tips.SetToolTip(music,"Abrir reproductor");tips.SetToolTip(minimize,"Minimizar");
             audio=AudioDevice.TryCreate();if(audio!=null){audio.SetBalance(0);audio.Volume=0.30f;}refresh.Interval=35;refresh.Tick+=delegate{RefreshAudio();};refresh.Start();duckTimer.Interval=12000;duckTimer.Tick+=delegate{RestoreAfterVoice();};
             ContextMenuStrip menu=new ContextMenuStrip();menu.Items.Add("Mostrar reproductor y volumen",null,delegate{ShowPanel();});menu.Items.Add("Configurar voz y catálogo",null,delegate{OpenMusic();});menu.Items.Add("Apariencia...",null,delegate{OpenAppearance();});menu.Items.Add("Salir",null,delegate{forceExit=true;tray.Visible=false;Application.Exit();});
             tray.Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath)??SystemIcons.Application;tray.Text="Audio Personal";tray.ContextMenuStrip=menu;tray.Visible=true;tray.DoubleClick+=delegate{ShowPanel();};
@@ -188,13 +189,13 @@ namespace AudioPersonal
         void ShowPanelOnly(){Show();WindowState=FormWindowState.Normal;Activate();}
         void OpenMusic(){if(musicForm==null||musicForm.IsDisposed)musicForm=new MainForm(UpdateVoiceState,DuckForVoice,RestoreAfterVoice,SetVolumePercent,AdjustVolumePercent,playerEngine,OpenPlayer,ClosePlayer);musicForm.Initialize();musicForm.Show();musicForm.WindowState=FormWindowState.Normal;musicForm.Activate();}
         void OpenAppearance(){using(AppearanceForm dialog=new AppearanceForm())dialog.ShowDialog(this);}
-        void ShowViewMenu(Control owner){ContextMenuStrip menu=new ContextMenuStrip();menu.RenderMode=ToolStripRenderMode.System;menu.Items.Add("Apariencia...",null,delegate{OpenAppearance();});menu.Show(owner,new Point(0,owner.Height));}
         void OpenPlayer(){ShowPanelOnly();OpenPlayerOnly();}
         void ClosePlayer(){playerEngine.Stop();if(playerForm!=null&&!playerForm.IsDisposed)playerForm.Hide();}
         void OpenPlayerOnly(){bool wasVisible=playerForm!=null&&!playerForm.IsDisposed&&playerForm.Visible;if(playerForm==null||playerForm.IsDisposed){playerForm=new PlayerForm(playerEngine);playerForm.CompactModeChanged+=delegate{if(!synchronizingCompact)SetCombinedCompact(playerForm.CompactMode,true);};playerForm.ApplyCompact(compactPanel,true);playerForm.LocationChanged+=delegate{if(playerForm.Visible&&!movingPair)MovePairFromPlayer();};playerForm.SizeChanged+=delegate{if(playerForm.Visible&&!movingPair)MovePairFromPlayer();};}if(!wasVisible)playerForm.Location=new Point(Left-playerForm.Width,Top);playerForm.Show();playerForm.WindowState=FormWindowState.Normal;if(wasVisible)MovePairFromPlayer();else MovePairFromPanel();playerForm.Activate();}
         void MovePanelToTopRight(){Rectangle area=Screen.PrimaryScreen.WorkingArea;Location=new Point(area.Right-Width,area.Top);}
-        void MovePairFromPlayer(){if(movingPair||playerForm==null||playerForm.IsDisposed||!playerForm.Visible)return;movingPair=true;try{SetPanelHeight(playerForm.Height);Rectangle area=Screen.FromControl(playerForm).WorkingArea;int totalWidth=playerForm.Width+Width;int x=Math.Max(area.Left,Math.Min(playerForm.Left,area.Right-totalWidth));int y=Math.Max(area.Top,Math.Min(playerForm.Top,area.Bottom-playerForm.Height));playerForm.Location=new Point(x,y);Location=new Point(playerForm.Right,y);}finally{movingPair=false;}}
-        void MovePairFromPanel(){if(movingPair||playerForm==null||playerForm.IsDisposed||!playerForm.Visible)return;movingPair=true;try{SetPanelHeight(playerForm.Height);Rectangle area=Screen.FromControl(this).WorkingArea;int totalWidth=playerForm.Width+Width;int x=Math.Max(area.Left,Math.Min(Left-playerForm.Width,area.Right-totalWidth));int y=Math.Max(area.Top,Math.Min(Top,area.Bottom-playerForm.Height));playerForm.Location=new Point(x,y);Location=new Point(playerForm.Right,y);}finally{movingPair=false;}}
+        const int PairOverlap=4,PanelHeightCorrection=8;
+        void MovePairFromPlayer(){if(movingPair||playerForm==null||playerForm.IsDisposed||!playerForm.Visible)return;movingPair=true;try{SetPanelHeight(Math.Max(1,playerForm.Height-PanelHeightCorrection));Rectangle area=Screen.FromControl(playerForm).WorkingArea;int totalWidth=playerForm.Width+Width-PairOverlap;int x=Math.Max(area.Left,Math.Min(playerForm.Left,area.Right-totalWidth));int y=Math.Max(area.Top,Math.Min(playerForm.Top,area.Bottom-playerForm.Height));playerForm.Location=new Point(x,y);Location=new Point(playerForm.Right-PairOverlap,y);}finally{movingPair=false;}}
+        void MovePairFromPanel(){if(movingPair||playerForm==null||playerForm.IsDisposed||!playerForm.Visible)return;movingPair=true;try{SetPanelHeight(Math.Max(1,playerForm.Height-PanelHeightCorrection));Rectangle area=Screen.FromControl(this).WorkingArea;int totalWidth=playerForm.Width+Width-PairOverlap;int x=Math.Max(area.Left,Math.Min(Left-playerForm.Width+PairOverlap,area.Right-totalWidth));int y=Math.Max(area.Top,Math.Min(Top,area.Bottom-playerForm.Height));playerForm.Location=new Point(x,y);Location=new Point(playerForm.Right-PairOverlap,y);}finally{movingPair=false;}}
         void UpdateVoiceState(string message){if(IsDisposed||!IsHandleCreated)return;try{BeginInvoke((MethodInvoker)delegate{string s=message??"";if(s.StartsWith("Escuchando"))voiceState.Text="♫ Escuchando\nDiga: computadora";else if(s.StartsWith("Reproduciendo"))voiceState.Text="♫ REPRODUCIENDO\n"+Shorten(s.Substring(13),72);else if(s.StartsWith("Buscando"))voiceState.Text="⌕ BUSCANDO\n"+Shorten(s.Substring(8),55);else if(s.StartsWith("Error")||s.StartsWith("No se pudo"))voiceState.Text="⚠\n"+Shorten(s,65);else voiceState.Text="♫\n"+Shorten(s,65);});}catch{}}
         void DuckForVoice(){if(audio==null)return;if(!voiceDucked){volumeBeforeVoice=audio.Volume;voiceDucked=true;}duckTimer.Stop();duckTimer.Start();if(audio.Volume>0.10f)audio.Volume=0.10f;}
         void RestoreAfterVoice(){duckTimer.Stop();if(!voiceDucked||audio==null)return;audio.Volume=volumeBeforeVoice;voiceDucked=false;}
@@ -207,7 +208,7 @@ namespace AudioPersonal
         static int ExpectedPlayerHeight(bool compact){return (compact?185:640)+SystemInformation.CaptionHeight+SystemInformation.FixedFrameBorderSize.Height*2;}
         void SetPanelHeight(int height){height=Math.Max(compactPanel?205:490,height);MinimumSize=Size.Empty;MaximumSize=Size.Empty;Size=new Size(174,height);if(compactPanel){fader.SetBounds(20,40,45,125);meter.SetBounds(94,40,60,125);balanceText.Visible=balance.Visible=false;mute.SetBounds(44,170,86,27);voiceState.SetBounds(9,201,156,Math.Max(9,height-205));}else{int statusY=height-90,muteY=height-129,balanceY=height-171,balanceLabelY=height-193;fader.SetBounds(10,47,88,Math.Max(245,balanceLabelY-52));meter.SetBounds(104,47,60,Math.Max(245,balanceLabelY-52));balanceText.SetBounds(10,balanceLabelY,154,20);balance.SetBounds(17,balanceY,140,32);balanceText.Visible=balance.Visible=true;mute.SetBounds(44,muteY,86,34);voiceState.SetBounds(9,statusY,156,80);}MinimumSize=MaximumSize=Size;if(IsHandleCreated)AppearanceManager.ApplyRounded(this);}
         void RefreshAudio(){if(audio==null)return;int value=Math.Max(0,Math.Min(100,(int)Math.Round(audio.Volume*100)));internalChange=true;fader.Value=value;percent.Text=value+"%";mute.Text=audio.Muted||value==0?"MUTE ●":"MUTE";mute.BackColor=audio.Muted?Color.FromArgb(190,45,45):BackColor;float l,r;audio.GetPeaks(out l,out r);meter.SetLevels(l,r);internalChange=false;}
-        void ApplyTheme(){AppearancePalette palette=AppearanceManager.Palette;BackColor=palette.Background;ForeColor=palette.Text;foreach(Control c in Controls){c.BackColor=palette.Background;c.ForeColor=palette.Text;}foreach(Button button in new[]{mute,minimize,music,resize,view})AppearanceManager.StyleButton(button,palette);AppearanceManager.ApplyRoundedControl(voiceState,12);fader.DarkTheme=meter.DarkTheme=balance.DarkTheme=palette.Dark;Invalidate(true);}
+        void ApplyTheme(){AppearancePalette palette=AppearanceManager.Palette;BackColor=palette.Background;ForeColor=palette.Text;foreach(Control c in Controls){c.BackColor=palette.Background;c.ForeColor=palette.Text;}foreach(Button button in new[]{mute,minimize,music,resize})AppearanceManager.StyleButton(button,palette);AppearanceManager.ApplyRoundedControl(voiceState,12);fader.DarkTheme=meter.DarkTheme=balance.DarkTheme=palette.Dark;Invalidate(true);}
         void AppearanceChanged(object sender,EventArgs e){ApplyTheme();}
         void ThemeChanged(object sender,UserPreferenceChangedEventArgs e){AppearanceManager.RefreshWindowsTheme();ApplyTheme();}void DragWindow(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){Native.ReleaseCapture();Native.SendMessage(Handle,0xA1,new IntPtr(2),IntPtr.Zero);}}
         protected override void Dispose(bool disposing){if(disposing){RestoreAfterVoice();refresh.Dispose();duckTimer.Dispose();tray.Dispose();if(audio!=null)audio.Dispose();if(musicForm!=null)musicForm.Dispose();if(playerForm!=null)playerForm.Dispose();playerEngine.Dispose();SystemEvents.UserPreferenceChanged-=ThemeChanged;AppearanceManager.Changed-=AppearanceChanged;}base.Dispose(disposing);}
@@ -216,7 +217,7 @@ namespace AudioPersonal
     internal sealed class ConsoleFader:Control
     {
         int value=50;bool dragging,dark,compactStyle;public event EventHandler ValueChanged;public bool DarkTheme{get{return dark;}set{dark=value;Invalidate();}}public bool CompactStyle{get{return compactStyle;}set{compactStyle=value;Invalidate();}}public int Value{get{return value;}set{int v=Math.Max(0,Math.Min(100,value));if(this.value!=v){this.value=v;Invalidate();}}}public ConsoleFader(){DoubleBuffered=true;Cursor=Cursors.Hand;}
-        protected override void OnPaint(PaintEventArgs e){Graphics g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;int top=14,bottom=Height-14,cx=Width/2;using(Pen rail=new Pen(dark?Color.Black:Color.FromArgb(55,55,55),compactStyle?6:8))g.DrawLine(rail,cx,top,cx,bottom);using(Pen edge=new Pen(dark?Color.FromArgb(85,85,85):Color.FromArgb(185,185,180),1))for(int i=0;i<=10;i++){int y=top+(bottom-top)*i/10;g.DrawLine(edge,compactStyle?2:6,y,compactStyle?8:19,y);g.DrawLine(edge,compactStyle?Width-9:Width-20,y,compactStyle?Width-3:Width-7,y);}int knobY=bottom-(bottom-top)*value/100,half=compactStyle?13:22,left=compactStyle?5:8;Rectangle knob=new Rectangle(left,knobY-half,Width-left*2,half*2);using(LinearGradientBrush b=new LinearGradientBrush(knob,dark?Color.FromArgb(115,115,115):Color.FromArgb(150,150,145),dark?Color.FromArgb(48,48,48):Color.FromArgb(78,78,75),LinearGradientMode.Vertical))g.FillRectangle(b,knob);using(Pen p=new Pen(Color.FromArgb(35,35,35),1))g.DrawRectangle(p,knob);using(Pen groove=new Pen(Color.FromArgb(45,45,45),compactStyle?1:2))for(int i=compactStyle?-8:-12;i<=(compactStyle?8:12);i+=compactStyle?4:6)g.DrawLine(groove,knob.Left+(compactStyle?5:7),knobY+i,knob.Right-(compactStyle?5:7),knobY+i);Color mark=Blend(Color.FromArgb(255,240,155),Color.FromArgb(255,118,118),value/100f);using(Pen pen=new Pen(mark,3))g.DrawLine(pen,knob.Left+3,knobY,knob.Right-3,knobY);}
+        protected override void OnPaint(PaintEventArgs e){Graphics g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;int top=14,bottom=Height-14,cx=Width/2;using(Pen rail=new Pen(dark?Color.Black:Color.FromArgb(55,55,55),compactStyle?6:8))g.DrawLine(rail,cx,top,cx,bottom);using(Pen edge=new Pen(dark?Color.FromArgb(85,85,85):Color.FromArgb(185,185,180),1))for(int i=0;i<=10;i++){int y=top+(bottom-top)*i/10;g.DrawLine(edge,compactStyle?2:6,y,compactStyle?8:19,y);g.DrawLine(edge,compactStyle?Width-9:Width-20,y,compactStyle?Width-3:Width-7,y);}int knobY=bottom-(bottom-top)*value/100,half=compactStyle?13:22,left=compactStyle?5:8;Rectangle knob=new Rectangle(left,knobY-half,Width-left*2,half*2);using(LinearGradientBrush b=new LinearGradientBrush(knob,dark?Color.FromArgb(115,115,115):Color.FromArgb(150,150,145),dark?Color.FromArgb(48,48,48):Color.FromArgb(78,78,75),LinearGradientMode.Vertical))g.FillRectangle(b,knob);using(Pen p=new Pen(Color.FromArgb(35,35,35),1))g.DrawRectangle(p,knob);using(Pen groove=new Pen(Color.FromArgb(45,45,45),compactStyle?1:2))for(int i=compactStyle?-8:-12;i<=(compactStyle?8:12);i+=compactStyle?4:6)g.DrawLine(groove,knob.Left+(compactStyle?5:7),knobY+i,knob.Right-(compactStyle?5:7),knobY+i);Color mark=Blend(Color.FromArgb(255,239,150),Color.FromArgb(165,45,45),value/100f);using(Pen pen=new Pen(mark,3))g.DrawLine(pen,knob.Left+3,knobY,knob.Right-3,knobY);}
         static Color Blend(Color from,Color to,float amount){amount=Math.Max(0,Math.Min(1,amount));return Color.FromArgb((int)(from.R+(to.R-from.R)*amount),(int)(from.G+(to.G-from.G)*amount),(int)(from.B+(to.B-from.B)*amount));}
         void UpdateValue(int y){int top=14,bottom=Height-14;Value=(int)Math.Round(100.0*(bottom-Math.Max(top,Math.Min(bottom,y)))/(bottom-top));EventHandler h=ValueChanged;if(h!=null)h(this,EventArgs.Empty);}protected override void OnMouseDown(MouseEventArgs e){if(e.Button==MouseButtons.Left){dragging=true;Capture=true;UpdateValue(e.Y);}}protected override void OnMouseMove(MouseEventArgs e){if(dragging)UpdateValue(e.Y);}protected override void OnMouseUp(MouseEventArgs e){dragging=false;Capture=false;}protected override void OnMouseWheel(MouseEventArgs e){Value+=e.Delta>0?2:-2;EventHandler h=ValueChanged;if(h!=null)h(this,EventArgs.Empty);}
     }
@@ -299,7 +300,7 @@ namespace AudioPersonal
             Text = "Audio Personal - Configuración";
             ClientSize = new Size(860, 675); StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 10F); MinimumSize = new Size(760, 610);
-            viewButton.Text="Ver ▾";viewButton.SetBounds(20,16,58,30);viewButton.Click+=delegate{ContextMenuStrip menu=new ContextMenuStrip();menu.Items.Add("Apariencia...",null,delegate{using(AppearanceForm dialog=new AppearanceForm())dialog.ShowDialog(this);});menu.Show(viewButton,new Point(0,viewButton.Height));};
+            viewButton.Text="Ver";viewButton.SetBounds(20,16,58,30);viewButton.AccessibleName="Abrir apariencia";viewButton.Click+=delegate{using(AppearanceForm dialog=new AppearanceForm())dialog.ShowDialog(this);};
             Label title = NewLabel("Audio Personal — catálogo y reproducción por voz", 88, 14, 752, 34);
             title.Font = new Font("Segoe UI", 15F, FontStyle.Bold);
             status.Text = Installer.Ready ? "Reconocimiento bilingüe instalado." : "Falta instalar el reconocimiento bilingüe.";
@@ -631,7 +632,7 @@ namespace AudioPersonal
             if (File.Exists(temporary)) File.Delete(temporary);
             using (WebClient client = new WebClient())
             {
-                client.Headers.Add("User-Agent", "AudioPersonal/5.0-beta");
+                client.Headers.Add("User-Agent", "AudioPersonal/5.1-beta");
                 client.DownloadProgressChanged += delegate(object sender, DownloadProgressChangedEventArgs e)
                 {
                     report(from + ((to - from) * e.ProgressPercentage / 100),
