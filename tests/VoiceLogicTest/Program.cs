@@ -22,6 +22,11 @@ static class Program
         if (actual != expected) throw new Exception(phrase + " => " + actual + "; esperado: " + expected);
     }
 
+    static void AssertClose(float actual, float expected, string message)
+    {
+        if (Math.Abs(actual - expected) > 0.0001f) throw new Exception(message);
+    }
+
     static int Main(string[] args)
     {
         Assembly application = Assembly.LoadFrom(args[0]);
@@ -201,6 +206,17 @@ static class Program
         object[] falseVolumeArguments = { "computadora hamilton bohanon", DateTime.MinValue, new Action<int>(value => exactVolume = value), new Action<int>(value => relativeVolume = value) };
         string falseVolumeResult = (string)executeVolume.Invoke(null, falseVolumeArguments);
         if (falseVolumeResult != null || exactVolume != -1 || relativeVolume != 0) throw new Exception("Hamilton Bohannon volvió a activar una orden de volumen.");
+
+        Type audioDeviceType = application.GetType("AudioPersonal.AudioDevice", true);
+        MethodInfo calculateBalance = audioDeviceType.GetMethod("CalculateBalanceLevels", BindingFlags.NonPublic | BindingFlags.Static);
+        object[] centeredBalance = { 0.30f, 0, 0f, 0f };
+        calculateBalance.Invoke(null, centeredBalance);
+        AssertClose((float)centeredBalance[2], 0.30f, "El balance centrado alteró el canal izquierdo.");
+        AssertClose((float)centeredBalance[3], 0.30f, "El balance centrado alteró el canal derecho.");
+        object[] rightBalance = { 0.30f, 50, 0f, 0f };
+        calculateBalance.Invoke(null, rightBalance);
+        AssertClose((float)rightBalance[2], 0.15f, "El balance derecho no atenuó el canal izquierdo.");
+        AssertClose((float)rightBalance[3], 0.30f, "El balance derecho elevó el volumen maestro.");
         ((IDisposable)playerEngine).Dispose();
 
         Console.WriteLine("VOICE_LOGIC_OK");
