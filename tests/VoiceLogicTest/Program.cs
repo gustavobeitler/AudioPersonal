@@ -30,7 +30,7 @@ static class Program
     static int Main(string[] args)
     {
         Assembly application = Assembly.LoadFrom(args[0]);
-        if (application.GetName().Version.ToString() != "5.0.0.0") throw new Exception("La compilación no corresponde a Audio Personal 5.0 Beta.");
+        if (application.GetName().Version.ToString() != "5.1.0.0") throw new Exception("La compilación no corresponde a Audio Personal 5.1 Beta.");
         Type request = application.GetType("AudioPersonal.MusicRequest", true);
         extract = request.GetMethod("Extract", BindingFlags.Public | BindingFlags.Static);
 

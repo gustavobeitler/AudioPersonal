@@ -510,7 +510,7 @@ namespace AudioPersonal
             this.engine = engine; Text = "Audio Personal — Reproductor";AutoScaleMode=AutoScaleMode.None;ClientSize = new Size(790, 640);StartPosition = FormStartPosition.Manual;FormBorderStyle=FormBorderStyle.FixedSingle;MaximizeBox=false;
             Font = new Font("Segoe UI", 9F); Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             title.SetBounds(78, 12, 654, 36); title.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;title.Font = new Font("Segoe UI", 13F, FontStyle.Bold); title.TextAlign = ContentAlignment.MiddleCenter; title.ForeColor = Color.FromArgb(126, 230, 145);
-            viewButton.Text="Ver ▾";viewButton.SetBounds(18,15,56,28);viewButton.Click+=delegate{ContextMenuStrip menu=new ContextMenuStrip();menu.Items.Add("Apariencia...",null,delegate{using(AppearanceForm dialog=new AppearanceForm())dialog.ShowDialog(this);});menu.Show(viewButton,new Point(0,viewButton.Height));};
+            viewButton.Text="Ver";viewButton.SetBounds(18,15,56,28);viewButton.AccessibleName="Abrir apariencia";viewButton.Click+=delegate{using(AppearanceForm dialog=new AppearanceForm())dialog.ShowDialog(this);};
             compactButton.Text="▣";compactButton.SetBounds(742,15,30,28);compactButton.Anchor=AnchorStyles.Top|AnchorStyles.Right;compactButton.Click+=delegate{SetCompact(!compactMode,true);EventHandler handler=CompactModeChanged;if(handler!=null)handler(this,EventArgs.Empty);};
             meter.SetBounds(18, 52, 754, 34);meter.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;
             position.SetBounds(18, 94, 650, 26); position.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
