@@ -22,15 +22,15 @@ import android.os.Looper;
 import android.os.PowerManager;
 
 public final class PlaybackService extends Service {
-    public static final String ACTION_PLAY = "com.gustavo.reproductorsueno.safe.PLAY";
-    public static final String ACTION_PAUSE = "com.gustavo.reproductorsueno.safe.PAUSE";
-    public static final String ACTION_STOP = "com.gustavo.reproductorsueno.safe.STOP";
+    public static final String ACTION_PLAY = "com.gustavo.reproductorsueno.core.PLAY";
+    public static final String ACTION_PAUSE = "com.gustavo.reproductorsueno.core.PAUSE";
+    public static final String ACTION_STOP = "com.gustavo.reproductorsueno.core.STOP";
 
-    private static final String CHANNEL_ID = "safe_audio_core";
-    private static final int NOTIFICATION_ID = 1110;
-    private static final int DEFAULT_DB = -24;
-    private static final int MIN_DB = -60;
-    private static final int MAX_DB = -6;
+    private static final String CHANNEL_ID = "audio_core";
+    private static final int NOTIFICATION_ID = 1120;
+    private static final int DEFAULT_VOLUME_PERCENT = 50;
+    private static final int MIN_VOLUME_PERCENT = 0;
+    private static final int MAX_VOLUME_PERCENT = 100;
 
     public enum State {
         IDLE, PREPARING, PLAYING, PAUSED, STOPPED, ERROR
@@ -43,14 +43,14 @@ public final class PlaybackService extends Service {
     public static final class Snapshot {
         public final State state;
         public final String title;
-        public final int attenuationDb;
+        public final int volumePercent;
         public final int positionMs;
         public final int durationMs;
 
-        Snapshot(State state, String title, int attenuationDb, int positionMs, int durationMs) {
+        Snapshot(State state, String title, int volumePercent, int positionMs, int durationMs) {
             this.state = state;
             this.title = title;
-            this.attenuationDb = attenuationDb;
+            this.volumePercent = volumePercent;
             this.positionMs = positionMs;
             this.durationMs = durationMs;
         }
@@ -70,7 +70,7 @@ public final class PlaybackService extends Service {
     private Uri selectedUri;
     private String selectedTitle = "Sin canción seleccionada";
     private State state = State.IDLE;
-    private int attenuationDb = DEFAULT_DB;
+    private int volumePercent = DEFAULT_VOLUME_PERCENT;
     private boolean prepared;
     private boolean playWhenPrepared;
     private boolean foregroundStarted;
@@ -93,8 +93,8 @@ public final class PlaybackService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
-        prefs = getSharedPreferences("safe_audio_core_v11", MODE_PRIVATE);
-        attenuationDb = clampDb(prefs.getInt("attenuation_db", DEFAULT_DB));
+        prefs = getSharedPreferences("audio_core_v12", MODE_PRIVATE);
+        volumePercent = clampVolume(prefs.getInt("volume_percent", DEFAULT_VOLUME_PERCENT));
 
         String uriText = prefs.getString("selected_uri", null);
         selectedTitle = prefs.getString("selected_title", "Sin canción seleccionada");
@@ -208,16 +208,16 @@ public final class PlaybackService extends Service {
         } catch (Exception ignored) { }
     }
 
-    public void setAttenuationDb(int db) {
-        attenuationDb = clampDb(db);
-        prefs.edit().putInt("attenuation_db", attenuationDb).apply();
+    public void setVolumePercent(int percent) {
+        volumePercent = clampVolume(percent);
+        prefs.edit().putInt("volume_percent", volumePercent).apply();
         applyVolumeImmediately();
         startOrUpdateForeground();
         notifyState();
     }
 
     public Snapshot getSnapshot() {
-        return new Snapshot(state, selectedTitle, attenuationDb, safePosition(), safeDuration());
+        return new Snapshot(state, selectedTitle, volumePercent, safePosition(), safeDuration());
     }
 
     private void prepareSelectedTrack(int resumePositionMs, boolean shouldPlay) {
@@ -242,7 +242,7 @@ public final class PlaybackService extends Service {
                     .build());
             newPlayer.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK);
 
-            // Barrera de seguridad: el reproductor nace en silencio.
+            // Evita cualquier golpe de volumen antes de cargar el valor elegido.
             newPlayer.setVolume(0f, 0f);
             newPlayer.setDataSource(this, selectedUri);
 
@@ -257,7 +257,7 @@ public final class PlaybackService extends Service {
                     }
                 } catch (Exception ignored) { }
 
-                // La atenuación se aplica antes de cualquier llamada a start().
+                // El porcentaje seleccionado se aplica antes de cualquier start().
                 applyVolumeBeforePlayback();
 
                 if (playWhenPrepared) {
@@ -304,22 +304,18 @@ public final class PlaybackService extends Service {
 
     private void applyVolumeBeforePlayback() {
         if (player == null) return;
-        float amplitude = amplitudeForDb(attenuationDb);
+        float amplitude = volumePercent / 100f;
         try { player.setVolume(amplitude, amplitude); } catch (Exception ignored) { }
     }
 
     private void applyVolumeImmediately() {
         if (player == null || !prepared) return;
-        float amplitude = amplitudeForDb(attenuationDb);
+        float amplitude = volumePercent / 100f;
         try { player.setVolume(amplitude, amplitude); } catch (Exception ignored) { }
     }
 
-    private float amplitudeForDb(int db) {
-        return (float) Math.pow(10.0, clampDb(db) / 20.0);
-    }
-
-    private int clampDb(int db) {
-        return Math.max(MIN_DB, Math.min(MAX_DB, db));
+    private int clampVolume(int percent) {
+        return Math.max(MIN_VOLUME_PERCENT, Math.min(MAX_VOLUME_PERCENT, percent));
     }
 
     private int safePosition() {
@@ -361,7 +357,9 @@ public final class PlaybackService extends Service {
 
         String transportAction = state == State.PLAYING ? ACTION_PAUSE : ACTION_PLAY;
         Intent transportIntent = new Intent(this, PlaybackService.class).setAction(transportAction);
-        PendingIntent transport = PendingIntent.getService(this, 2, transportIntent, pendingFlags);
+        PendingIntent transport = Build.VERSION.SDK_INT >= 26
+                ? PendingIntent.getForegroundService(this, 2, transportIntent, pendingFlags)
+                : PendingIntent.getService(this, 2, transportIntent, pendingFlags);
 
         Intent stopIntent = new Intent(this, PlaybackService.class).setAction(ACTION_STOP);
         PendingIntent stop = PendingIntent.getService(this, 3, stopIntent, pendingFlags);
@@ -375,7 +373,7 @@ public final class PlaybackService extends Service {
                 .setContentIntent(open)
                 .setContentTitle(selectedTitle)
                 .setContentText((state == State.PLAYING ? "Reproduciendo" : "En pausa")
-                        + " · " + (attenuationDb < 0 ? "−" + Math.abs(attenuationDb) : attenuationDb) + " dB")
+                        + " · Volumen " + volumePercent + "%")
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
                 .setOngoing(state == State.PLAYING)
@@ -390,8 +388,8 @@ public final class PlaybackService extends Service {
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT < 26) return;
         NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID, "Reproducción segura", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("Controles del núcleo seguro del reproductor");
+                CHANNEL_ID, "Reproducción de música", NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription("Controles del núcleo del reproductor");
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) manager.createNotificationChannel(channel);
     }
