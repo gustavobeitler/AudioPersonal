@@ -30,6 +30,7 @@ static class Program
     static int Main(string[] args)
     {
         Assembly application = Assembly.LoadFrom(args[0]);
+        if (application.GetName().Version.ToString() != "5.0.0.0") throw new Exception("La compilación no corresponde a Audio Personal 5.0 Beta.");
         Type request = application.GetType("AudioPersonal.MusicRequest", true);
         extract = request.GetMethod("Extract", BindingFlags.Public | BindingFlags.Static);
 
@@ -217,9 +218,25 @@ static class Program
         calculateBalance.Invoke(null, rightBalance);
         AssertClose((float)rightBalance[2], 0.15f, "El balance derecho no atenuó el canal izquierdo.");
         AssertClose((float)rightBalance[3], 0.30f, "El balance derecho elevó el volumen maestro.");
+
+        Type appearanceType = application.GetType("AudioPersonal.AppearanceManager", true);
+        MethodInfo createPalette = appearanceType.GetMethod("CreatePalette", BindingFlags.Public | BindingFlags.Static);
+        object darkPalette = createPalette.Invoke(null, new object[] { 205, 58, 22, 62 });
+        object lightPalette = createPalette.Invoke(null, new object[] { 205, 58, 91, 62 });
+        if (!(bool)darkPalette.GetType().GetField("Dark").GetValue(darkPalette)) throw new Exception("El tema oscuro dejó de identificarse como oscuro.");
+        if ((bool)lightPalette.GetType().GetField("Dark").GetValue(lightPalette)) throw new Exception("El tema claro dejó de identificarse como claro.");
+        object darkBackground = darkPalette.GetType().GetField("Background").GetValue(darkPalette);
+        object lightBackground = lightPalette.GetType().GetField("Background").GetValue(lightPalette);
+        int darkBrightness = Convert.ToInt32(darkBackground.GetType().GetProperty("R").GetValue(darkBackground)) +
+            Convert.ToInt32(darkBackground.GetType().GetProperty("G").GetValue(darkBackground)) +
+            Convert.ToInt32(darkBackground.GetType().GetProperty("B").GetValue(darkBackground));
+        int lightBrightness = Convert.ToInt32(lightBackground.GetType().GetProperty("R").GetValue(lightBackground)) +
+            Convert.ToInt32(lightBackground.GetType().GetProperty("G").GetValue(lightBackground)) +
+            Convert.ToInt32(lightBackground.GetType().GetProperty("B").GetValue(lightBackground));
+        if (lightBrightness <= darkBrightness) throw new Exception("Las paletas clara y oscura no se diferencian correctamente.");
         ((IDisposable)playerEngine).Dispose();
 
-        Console.WriteLine("VOICE_LOGIC_OK");
+        Console.WriteLine("AUDIO_PERSONAL_5_0_OK");
         return 0;
     }
 }

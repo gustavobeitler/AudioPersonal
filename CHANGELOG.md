@@ -1,5 +1,14 @@
 # Historial de cambios
 
+## 5.0 beta
+
+- Consolidado el nuevo lenguaje visual común con RadioEnlace.
+- Apariencia adaptable al modo claro u oscuro de Windows, con personalización de color, intensidad, fondo y contraste.
+- El botón `Ver ▾` queda integrado en el reproductor, el panel de volumen y la configuración.
+- Corregida la cancelación del panel Apariencia para que no cambie accidentalmente la preferencia de seguimiento de Windows.
+- Conservadas la corrección técnica del balance, las playlists, el ecualizador y el control por voz de la 4.12.4.
+- Limpieza de referencias activas a versiones anteriores y paquete final con una única carpeta `Audio Personal`.
+
 ## 4.12.4 beta
 
 - Sustituido el menú clásico por un botón visible `Ver ▾` dentro del reproductor y del panel de volumen.

@@ -14,11 +14,11 @@ using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-[assembly: AssemblyTitle("Audio Personal Beta 4.12.4")]
+[assembly: AssemblyTitle("Audio Personal 5.0 Beta")]
 [assembly: AssemblyProduct("Audio Personal")]
 [assembly: AssemblyDescription("Reproductor local y control de volumen por voz")]
-[assembly: AssemblyVersion("4.12.4.0")]
-[assembly: AssemblyFileVersion("4.12.4.0")]
+[assembly: AssemblyVersion("5.0.0.0")]
+[assembly: AssemblyFileVersion("5.0.0.0")]
 
 namespace AudioPersonal
 {
@@ -59,6 +59,15 @@ namespace AudioPersonal
         public bool Dark;
     }
 
+    internal static class WindowsTheme
+    {
+        public static bool UsesDarkMode()
+        {
+            try{return Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize","AppsUseLightTheme",0))==0;}catch{return true;}
+        }
+        public static int BackgroundLevel(){return UsesDarkMode()?22:91;}
+    }
+
     internal static class AppearanceManager
     {
         const string RegistryPath=@"Software\AudioPersonal\Appearance";
@@ -77,12 +86,12 @@ namespace AudioPersonal
         {
             followsWindows=false;try{using(RegistryKey key=Registry.CurrentUser.CreateSubKey(RegistryPath)){key.SetValue("Color",hue);key.SetValue("Intensidad",intensity);key.SetValue("Fondo",background);key.SetValue("Contraste",contrast);key.SetValue("Personalizada",1);}}catch{}
         }
-        public static void ResetToWindows(){followsWindows=true;SetPreview(205,58,WindowsUsesDarkMode()?22:91,62);try{using(RegistryKey key=Registry.CurrentUser.CreateSubKey(RegistryPath))key.SetValue("Personalizada",0);}catch{}}
-        public static void RefreshWindowsTheme(){if(followsWindows)SetPreview(hue,intensity,WindowsUsesDarkMode()?22:91,contrast);}
-        static bool WindowsUsesDarkMode(){try{return Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize","AppsUseLightTheme",0))==0;}catch{return true;}}
+        public static void ResetToWindows(){followsWindows=true;SetPreview(205,58,WindowsTheme.BackgroundLevel(),62);try{using(RegistryKey key=Registry.CurrentUser.CreateSubKey(RegistryPath))key.SetValue("Personalizada",0);}catch{}}
+        public static void RestorePreview(int color,int strength,int backdrop,int difference,bool followWindows){followsWindows=followWindows;SetPreview(color,strength,backdrop,difference);}
+        public static void RefreshWindowsTheme(){if(followsWindows)SetPreview(hue,intensity,WindowsTheme.BackgroundLevel(),contrast);}
         static void Load()
         {
-            try{followsWindows=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Personalizada",0))==0;hue=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Color",205));intensity=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Intensidad",58));background=followsWindows?(WindowsUsesDarkMode()?22:91):Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Fondo",22));contrast=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Contraste",62));}catch{}
+            try{followsWindows=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Personalizada",0))==0;hue=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Color",205));intensity=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Intensidad",58));background=followsWindows?WindowsTheme.BackgroundLevel():Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Fondo",22));contrast=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\"+RegistryPath,"Contraste",62));}catch{}
         }
         public static AppearancePalette CreatePalette(int color,int strength,int backdrop,int difference)
         {
@@ -121,22 +130,22 @@ namespace AudioPersonal
     {
         readonly TrackBar color=new TrackBar(),intensity=new TrackBar(),background=new TrackBar(),contrast=new TrackBar();
         readonly Panel preview=new Panel();readonly Button save=new Button(),reset=new Button(),cancel=new Button();
-        readonly int oldColor,oldIntensity,oldBackground,oldContrast;
+        readonly int oldColor,oldIntensity,oldBackground,oldContrast;readonly bool oldFollowsWindows;bool useWindows,updating;
         public AppearanceForm()
         {
-            oldColor=AppearanceManager.Hue;oldIntensity=AppearanceManager.Intensity;oldBackground=AppearanceManager.Background;oldContrast=AppearanceManager.Contrast;
+            oldColor=AppearanceManager.Hue;oldIntensity=AppearanceManager.Intensity;oldBackground=AppearanceManager.Background;oldContrast=AppearanceManager.Contrast;oldFollowsWindows=AppearanceManager.FollowsWindows;useWindows=oldFollowsWindows;
             Text="Apariencia";ClientSize=new Size(430,330);FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=MinimizeBox=false;ShowInTaskbar=false;StartPosition=FormStartPosition.CenterParent;Font=new Font("Segoe UI",9F);
             AddSlider("Color",color,18,oldColor,0,359);AddSlider("Intensidad",intensity,76,oldIntensity,0,100);AddSlider("Fondo",background,134,oldBackground,4,96);AddSlider("Contraste",contrast,192,oldContrast,0,100);
             preview.SetBounds(22,252,130,48);Controls.Add(preview);
-            save.Text="Guardar";save.SetBounds(168,260,78,32);save.Click+=delegate{AppearanceManager.Save();DialogResult=DialogResult.OK;Close();};
-            reset.Text="Usar Windows";reset.SetBounds(252,260,88,32);reset.Click+=delegate{AppearanceManager.ResetToWindows();color.Value=AppearanceManager.Hue;intensity.Value=AppearanceManager.Intensity;background.Value=AppearanceManager.Background;contrast.Value=AppearanceManager.Contrast;Preview();};
-            cancel.Text="Cancelar";cancel.SetBounds(346,260,72,32);cancel.Click+=delegate{AppearanceManager.SetPreview(oldColor,oldIntensity,oldBackground,oldContrast);DialogResult=DialogResult.Cancel;Close();};
-            Controls.AddRange(new Control[]{save,reset,cancel});FormClosing+=delegate(object sender,FormClosingEventArgs e){if(DialogResult!=DialogResult.OK)AppearanceManager.SetPreview(oldColor,oldIntensity,oldBackground,oldContrast);};
+            save.Text="Guardar";save.SetBounds(168,260,78,32);save.Click+=delegate{if(useWindows)AppearanceManager.ResetToWindows();else AppearanceManager.Save();DialogResult=DialogResult.OK;Close();};
+            reset.Text="Usar Windows";reset.SetBounds(252,260,88,32);reset.Click+=delegate{updating=true;color.Value=205;intensity.Value=58;background.Value=WindowsTheme.BackgroundLevel();contrast.Value=62;updating=false;useWindows=true;Preview();};
+            cancel.Text="Cancelar";cancel.SetBounds(346,260,72,32);cancel.Click+=delegate{AppearanceManager.RestorePreview(oldColor,oldIntensity,oldBackground,oldContrast,oldFollowsWindows);DialogResult=DialogResult.Cancel;Close();};
+            Controls.AddRange(new Control[]{save,reset,cancel});FormClosing+=delegate(object sender,FormClosingEventArgs e){if(DialogResult!=DialogResult.OK)AppearanceManager.RestorePreview(oldColor,oldIntensity,oldBackground,oldContrast,oldFollowsWindows);};
             Shown+=delegate{AppearanceManager.ApplyRounded(this);Preview();};
         }
         void AddSlider(string text,TrackBar slider,int y,int value,int minimum,int maximum)
         {
-            Label label=new Label();label.Text=text;label.SetBounds(20,y,90,24);slider.SetBounds(108,y-5,304,45);slider.Minimum=minimum;slider.Maximum=maximum;slider.TickFrequency=Math.Max(1,(maximum-minimum)/10);slider.Value=Math.Max(minimum,Math.Min(maximum,value));slider.ValueChanged+=delegate{Preview();};Controls.Add(label);Controls.Add(slider);
+            Label label=new Label();label.Text=text;label.SetBounds(20,y,90,24);slider.SetBounds(108,y-5,304,45);slider.Minimum=minimum;slider.Maximum=maximum;slider.TickFrequency=Math.Max(1,(maximum-minimum)/10);slider.Value=Math.Max(minimum,Math.Min(maximum,value));slider.ValueChanged+=delegate{if(!updating)useWindows=false;Preview();};Controls.Add(label);Controls.Add(slider);
         }
         void Preview()
         {
@@ -622,7 +631,7 @@ namespace AudioPersonal
             if (File.Exists(temporary)) File.Delete(temporary);
             using (WebClient client = new WebClient())
             {
-                client.Headers.Add("User-Agent", "AudioPersonal/4.12.4-beta");
+                client.Headers.Add("User-Agent", "AudioPersonal/5.0-beta");
                 client.DownloadProgressChanged += delegate(object sender, DownloadProgressChangedEventArgs e)
                 {
                     report(from + ((to - from) * e.ProgressPercentage / 100),
