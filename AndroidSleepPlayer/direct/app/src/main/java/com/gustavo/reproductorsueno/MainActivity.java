@@ -10,6 +10,7 @@ import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -30,10 +31,12 @@ import android.widget.Toast;
 import java.util.Locale;
 
 public final class MainActivity extends Activity implements PlaybackService.Listener {
-    private static final int PICK_AUDIO = 1101;
-    private static final int DEFAULT_DB = -24;
-    private static final int MIN_DB = -60;
-    private static final int MAX_DB = -6;
+    private static final int PICK_AUDIO = 1201;
+    private static final int DEFAULT_VOLUME_PERCENT = 50;
+    private static final int MIN_VOLUME_PERCENT = 0;
+    private static final int MAX_VOLUME_PERCENT = 100;
+    private static final int PHYSICAL_BUTTON_STEP = 5;
+
     private static final int BG = Color.rgb(5, 13, 21);
     private static final int PANEL = Color.rgb(15, 34, 48);
     private static final int PANEL2 = Color.rgb(20, 44, 59);
@@ -51,11 +54,11 @@ public final class MainActivity extends Activity implements PlaybackService.List
     private long lastVolumeKeyMs;
     private Uri selectedUri;
     private String selectedTitle = "Sin canción seleccionada";
-    private int attenuationDb = DEFAULT_DB;
+    private int volumePercent = DEFAULT_VOLUME_PERCENT;
 
     private TextView titleView;
     private TextView statusView;
-    private TextView dbView;
+    private TextView volumeValueView;
     private TextView elapsedView;
     private TextView durationView;
     private SeekBar volumeBar;
@@ -78,7 +81,7 @@ public final class MainActivity extends Activity implements PlaybackService.List
             service = ((PlaybackService.LocalBinder) binder).getService();
             bound = true;
             service.setListener(MainActivity.this);
-            service.setAttenuationDb(attenuationDb);
+            service.setVolumePercent(volumePercent);
             if (selectedUri != null) service.setSelectionIfEmpty(selectedUri, selectedTitle);
             render(service.getSnapshot());
             handler.post(ticker);
@@ -95,17 +98,28 @@ public final class MainActivity extends Activity implements PlaybackService.List
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        prefs = getSharedPreferences("safe_audio_core_v11", MODE_PRIVATE);
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
+
+        prefs = getSharedPreferences("audio_core_v12", MODE_PRIVATE);
         if (!prefs.getBoolean("initialized", false)) {
-            prefs.edit().clear().putBoolean("initialized", true)
-                    .putInt("attenuation_db", DEFAULT_DB).apply();
+            SharedPreferences old = getSharedPreferences("safe_audio_core_v11", MODE_PRIVATE);
+            SharedPreferences.Editor editor = prefs.edit()
+                    .putBoolean("initialized", true)
+                    .putInt("volume_percent", DEFAULT_VOLUME_PERCENT);
+            String oldUri = old.getString("selected_uri", null);
+            String oldTitle = old.getString("selected_title", null);
+            if (oldUri != null && !oldUri.isEmpty()) editor.putString("selected_uri", oldUri);
+            if (oldTitle != null && !oldTitle.isEmpty()) editor.putString("selected_title", oldTitle);
+            editor.apply();
         }
-        attenuationDb = clamp(prefs.getInt("attenuation_db", DEFAULT_DB));
+
+        volumePercent = clampVolume(prefs.getInt("volume_percent", DEFAULT_VOLUME_PERCENT));
         String uriText = prefs.getString("selected_uri", null);
         selectedTitle = prefs.getString("selected_title", selectedTitle);
         if (uriText != null) {
             try { selectedUri = Uri.parse(uriText); } catch (Exception ignored) { }
         }
+
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         buildUi();
@@ -113,7 +127,7 @@ public final class MainActivity extends Activity implements PlaybackService.List
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission("android.permission.POST_NOTIFICATIONS")
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1102);
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1202);
         }
     }
 
@@ -155,10 +169,10 @@ public final class MainActivity extends Activity implements PlaybackService.List
         });
 
         root.addView(label("REPRODUCTOR DE MÚSICA", 22, TEXT, true), mw());
-        root.addView(label("BETA 0.11 · NÚCLEO SEGURO", 11, CYAN, true), mw());
+        root.addView(label("BETA 0.12 · VOLUMEN ESTÁNDAR", 11, CYAN, true), mw());
 
         TextView safety = label(
-                "El audio nace en silencio y recibe la atenuación antes de Play. Máximo: −6 dB.",
+                "Volumen normal de 0 a 100%. Inicio: 50%. El valor se aplica antes de comenzar el audio.",
                 12, GREEN, true);
         safety.setPadding(dp(10), dp(8), dp(10), dp(8));
         safety.setBackground(box(Color.rgb(17, 55, 54), GREEN));
@@ -191,9 +205,9 @@ public final class MainActivity extends Activity implements PlaybackService.List
             @Override public void onStopTrackingTouch(SeekBar bar) {
                 userSeeking = false;
                 if (bound && service != null) {
-                    PlaybackService.Snapshot s = service.getSnapshot();
-                    if (s.durationMs > 0) {
-                        service.seekTo(Math.round(s.durationMs * bar.getProgress() / 1000f));
+                    PlaybackService.Snapshot snapshot = service.getSnapshot();
+                    if (snapshot.durationMs > 0) {
+                        service.seekTo(Math.round(snapshot.durationMs * bar.getProgress() / 1000f));
                     }
                 }
             }
@@ -232,31 +246,31 @@ public final class MainActivity extends Activity implements PlaybackService.List
 
         LinearLayout volume = card();
         LinearLayout head = row();
-        head.addView(label("ATENUACIÓN DIGITAL", 12, CYAN, true),
+        head.addView(label("VOLUMEN DE LA APLICACIÓN", 12, CYAN, true),
                 new LinearLayout.LayoutParams(0, -2, 1f));
-        dbView = label(formatDb(attenuationDb), 23, CYAN, true);
-        dbView.setGravity(Gravity.END);
-        head.addView(dbView, new LinearLayout.LayoutParams(dp(105), -2));
+        volumeValueView = label(formatPercent(volumePercent), 23, CYAN, true);
+        volumeValueView.setGravity(Gravity.END);
+        head.addView(volumeValueView, new LinearLayout.LayoutParams(dp(105), -2));
         volume.addView(head, mw());
 
         volumeBar = new SeekBar(this);
-        volumeBar.setMax(MAX_DB - MIN_DB);
-        volumeBar.setProgress(attenuationDb - MIN_DB);
+        volumeBar.setMax(MAX_VOLUME_PERCENT);
+        volumeBar.setProgress(volumePercent);
         volumeBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar bar, int p, boolean fromUser) {
-                int db = clamp(MIN_DB + p);
-                dbView.setText(formatDb(db));
-                if (fromUser) applyDb(db);
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                int percent = clampVolume(progress);
+                volumeValueView.setText(formatPercent(percent));
+                if (fromUser) applyVolume(percent);
             }
             @Override public void onStartTrackingTouch(SeekBar bar) { }
             @Override public void onStopTrackingTouch(SeekBar bar) {
-                applyDb(clamp(MIN_DB + bar.getProgress()));
+                applyVolume(clampVolume(bar.getProgress()));
             }
         });
         volume.addView(volumeBar, mw());
 
         TextView note = label(
-                "Los botones físicos mueven este mismo control en pasos de 1 dB. No son dB(A) reales.",
+                "Los botones físicos mueven este mismo control en pasos de 5%. Los perfiles se agregarán después.",
                 11, MUTED, false);
         note.setMaxLines(2);
         volume.addView(note, mw());
@@ -302,7 +316,7 @@ public final class MainActivity extends Activity implements PlaybackService.List
             Toast.makeText(this, "El motor de audio todavía se está iniciando", Toast.LENGTH_SHORT).show();
             return;
         }
-        service.setAttenuationDb(attenuationDb);
+        service.setVolumePercent(volumePercent);
         service.play(selectedUri, selectedTitle);
     }
 
@@ -314,14 +328,14 @@ public final class MainActivity extends Activity implements PlaybackService.List
         if (bound && service != null) service.stopPlayback();
     }
 
-    private void applyDb(int db) {
-        attenuationDb = clamp(db);
-        prefs.edit().putInt("attenuation_db", attenuationDb).apply();
-        if (volumeBar != null && volumeBar.getProgress() != attenuationDb - MIN_DB) {
-            volumeBar.setProgress(attenuationDb - MIN_DB);
+    private void applyVolume(int percent) {
+        volumePercent = clampVolume(percent);
+        prefs.edit().putInt("volume_percent", volumePercent).apply();
+        if (volumeBar != null && volumeBar.getProgress() != volumePercent) {
+            volumeBar.setProgress(volumePercent);
         }
-        if (dbView != null) dbView.setText(formatDb(attenuationDb));
-        if (bound && service != null) service.setAttenuationDb(attenuationDb);
+        if (volumeValueView != null) volumeValueView.setText(formatPercent(volumePercent));
+        if (bound && service != null) service.setVolumePercent(volumePercent);
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
@@ -331,7 +345,9 @@ public final class MainActivity extends Activity implements PlaybackService.List
                 long now = event.getEventTime();
                 if (event.getRepeatCount() == 0 || now - lastVolumeKeyMs >= 140L) {
                     lastVolumeKeyMs = now;
-                    applyDb(attenuationDb + (code == KeyEvent.KEYCODE_VOLUME_UP ? 1 : -1));
+                    int delta = code == KeyEvent.KEYCODE_VOLUME_UP
+                            ? PHYSICAL_BUTTON_STEP : -PHYSICAL_BUTTON_STEP;
+                    applyVolume(volumePercent + delta);
                 }
             }
             return true;
@@ -343,29 +359,28 @@ public final class MainActivity extends Activity implements PlaybackService.List
         runOnUiThread(() -> render(snapshot));
     }
 
-    private void render(PlaybackService.Snapshot s) {
-        if (s == null) return;
-        if (s.title != null && !s.title.isEmpty()) titleView.setText(s.title);
-        statusView.setText(stateText(s.state));
-        statusView.setTextColor(s.state == PlaybackService.State.ERROR ? RED
-                : s.state == PlaybackService.State.PLAYING ? GREEN : MUTED);
-        playButton.setEnabled(s.state != PlaybackService.State.PREPARING);
-        pauseButton.setEnabled(s.state == PlaybackService.State.PLAYING
-                || s.state == PlaybackService.State.PREPARING);
-        stopButton.setEnabled(s.state != PlaybackService.State.IDLE
-                && s.state != PlaybackService.State.STOPPED);
+    private void render(PlaybackService.Snapshot snapshot) {
+        if (snapshot == null) return;
+        if (snapshot.title != null && !snapshot.title.isEmpty()) titleView.setText(snapshot.title);
+        statusView.setText(stateText(snapshot.state));
+        statusView.setTextColor(snapshot.state == PlaybackService.State.ERROR ? RED
+                : snapshot.state == PlaybackService.State.PLAYING ? GREEN : MUTED);
+        playButton.setEnabled(snapshot.state != PlaybackService.State.PREPARING);
+        pauseButton.setEnabled(snapshot.state == PlaybackService.State.PLAYING
+                || snapshot.state == PlaybackService.State.PREPARING);
+        stopButton.setEnabled(snapshot.state != PlaybackService.State.IDLE
+                && snapshot.state != PlaybackService.State.STOPPED);
 
         if (!userSeeking) {
-            int p = s.durationMs <= 0 ? 0 : Math.round(s.positionMs * 1000f / s.durationMs);
-            progressBar.setProgress(Math.max(0, Math.min(1000, p)));
+            int progress = snapshot.durationMs <= 0
+                    ? 0 : Math.round(snapshot.positionMs * 1000f / snapshot.durationMs);
+            progressBar.setProgress(Math.max(0, Math.min(1000, progress)));
         }
-        elapsedView.setText(time(s.positionMs));
-        durationView.setText(time(s.durationMs));
-        attenuationDb = clamp(s.attenuationDb);
-        if (volumeBar.getProgress() != attenuationDb - MIN_DB) {
-            volumeBar.setProgress(attenuationDb - MIN_DB);
-        }
-        dbView.setText(formatDb(attenuationDb));
+        elapsedView.setText(time(snapshot.positionMs));
+        durationView.setText(time(snapshot.durationMs));
+        volumePercent = clampVolume(snapshot.volumePercent);
+        if (volumeBar.getProgress() != volumePercent) volumeBar.setProgress(volumePercent);
+        volumeValueView.setText(formatPercent(volumePercent));
     }
 
     private String stateText(PlaybackService.State state) {
@@ -397,8 +412,13 @@ public final class MainActivity extends Activity implements PlaybackService.List
         return dot > 0 && value.length() - dot <= 6 ? value.substring(0, dot) : value;
     }
 
-    private int clamp(int db) { return Math.max(MIN_DB, Math.min(MAX_DB, db)); }
-    private String formatDb(int db) { return "−" + Math.abs(db) + " dB"; }
+    private int clampVolume(int percent) {
+        return Math.max(MIN_VOLUME_PERCENT, Math.min(MAX_VOLUME_PERCENT, percent));
+    }
+
+    private String formatPercent(int percent) {
+        return percent + " %";
+    }
 
     private String time(int ms) {
         int total = Math.max(0, ms / 1000);
@@ -406,50 +426,50 @@ public final class MainActivity extends Activity implements PlaybackService.List
     }
 
     private LinearLayout column() {
-        LinearLayout v = new LinearLayout(this);
-        v.setOrientation(LinearLayout.VERTICAL);
-        return v;
+        LinearLayout view = new LinearLayout(this);
+        view.setOrientation(LinearLayout.VERTICAL);
+        return view;
     }
 
     private LinearLayout row() {
-        LinearLayout v = new LinearLayout(this);
-        v.setOrientation(LinearLayout.HORIZONTAL);
-        v.setGravity(Gravity.CENTER_VERTICAL);
-        return v;
+        LinearLayout view = new LinearLayout(this);
+        view.setOrientation(LinearLayout.HORIZONTAL);
+        view.setGravity(Gravity.CENTER_VERTICAL);
+        return view;
     }
 
     private LinearLayout card() {
-        LinearLayout v = column();
-        v.setPadding(dp(12), dp(10), dp(12), dp(10));
-        v.setBackground(box(PANEL, Color.rgb(35, 72, 90)));
-        return v;
+        LinearLayout view = column();
+        view.setPadding(dp(12), dp(10), dp(12), dp(10));
+        view.setBackground(box(PANEL, Color.rgb(35, 72, 90)));
+        return view;
     }
 
     private TextView label(String value, int size, int color, boolean bold) {
-        TextView v = new TextView(this);
-        v.setText(value);
-        v.setTextSize(size);
-        v.setTextColor(color);
-        if (bold) v.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        return v;
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return view;
     }
 
     private Button button(String value) {
-        Button v = new Button(this);
-        v.setText(value);
-        v.setAllCaps(false);
-        v.setTextSize(12);
-        v.setTextColor(TEXT);
-        v.setBackground(box(PANEL2, Color.rgb(45, 121, 203)));
-        return v;
+        Button view = new Button(this);
+        view.setText(value);
+        view.setAllCaps(false);
+        view.setTextSize(12);
+        view.setTextColor(TEXT);
+        view.setBackground(box(PANEL2, Color.rgb(45, 121, 203)));
+        return view;
     }
 
     private GradientDrawable box(int fill, int stroke) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(fill);
-        d.setCornerRadius(dp(12));
-        d.setStroke(dp(1), stroke);
-        return d;
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fill);
+        drawable.setCornerRadius(dp(12));
+        drawable.setStroke(dp(1), stroke);
+        return drawable;
     }
 
     private void addWeighted(LinearLayout parent, View child) {
@@ -457,12 +477,14 @@ public final class MainActivity extends Activity implements PlaybackService.List
     }
 
     private View space(int widthDp) {
-        View v = new View(this);
-        v.setMinimumWidth(dp(widthDp));
-        return v;
+        View view = new View(this);
+        view.setMinimumWidth(dp(widthDp));
+        return view;
     }
 
     private LinearLayout.LayoutParams mw() { return new LinearLayout.LayoutParams(-1, -2); }
-    private LinearLayout.LayoutParams mh(int h) { return new LinearLayout.LayoutParams(-1, dp(h)); }
-    private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
+    private LinearLayout.LayoutParams mh(int height) { return new LinearLayout.LayoutParams(-1, dp(height)); }
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
 }
