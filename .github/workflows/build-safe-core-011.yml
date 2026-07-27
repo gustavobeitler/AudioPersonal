@@ -7,6 +7,12 @@ on:
     paths:
       - 'AndroidSleepPlayer/**'
       - '.github/workflows/build-safe-core-011.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'AndroidSleepPlayer/**'
+      - '.github/workflows/build-safe-core-011.yml'
   workflow_dispatch:
 
 permissions:
