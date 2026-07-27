@@ -1,13 +1,123 @@
-name: Build Safe Audio Core
+name: Build Audio Core Beta 0.12
 
 on:
+  push:
+    branches:
+      - android-sleep-player-core-rebuild
+    paths:
+      - 'AndroidSleepPlayer/**'
+      - '.github/workflows/build-safe-core-011.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  hold:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Compilación temporalmente en pausa durante la actualización del núcleo"
+      - name: Checkout recovery branch
+        uses: actions/checkout@v4
+        with:
+          ref: android-sleep-player-core-rebuild
+
+      - name: Set Beta 0.12 version and verify standard volume core
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=AndroidSleepPlayer/direct/app
+          MAIN="$APP/src/main/java/com/gustavo/reproductorsueno/MainActivity.java"
+          SERVICE="$APP/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java"
+          MANIFEST="$APP/src/main/AndroidManifest.xml"
+
+          sed -i "s/versionCode 10/versionCode 12/" "$APP/build.gradle"
+          sed -i "s/versionName '0.10'/versionName '0.12'/" "$APP/build.gradle"
+
+          grep -q "versionCode 12" "$APP/build.gradle"
+          grep -q "versionName '0.12'" "$APP/build.gradle"
+          grep -q "DEFAULT_VOLUME_PERCENT = 50" "$MAIN"
+          grep -q "MAX_VOLUME_PERCENT = 100" "$MAIN"
+          grep -q "PHYSICAL_BUTTON_STEP = 5" "$MAIN"
+          grep -q "setVolumePercent(volumePercent)" "$MAIN"
+          grep -q "DEFAULT_VOLUME_PERCENT = 50" "$SERVICE"
+          grep -q "MAX_VOLUME_PERCENT = 100" "$SERVICE"
+          grep -q "newPlayer.setVolume(0f, 0f)" "$SERVICE"
+          grep -q "applyVolumeBeforePlayback();" "$SERVICE"
+          grep -q "mp.start();" "$SERVICE"
+          grep -q "player.pause();" "$SERVICE"
+          grep -q "player.setVolume(0f, 0f)" "$SERVICE"
+          grep -q "audio_core_v12" "$MAIN"
+          grep -q "audio_core_v12" "$SERVICE"
+          ! grep -q "ScrollView" "$MAIN"
+          ! grep -Eq "Equalizer|DynamicsProcessing|LoudnessEnhancer|AudioFocusRequest" "$SERVICE"
+          ! grep -q "PendingProfileJobService" "$MANIFEST"
+          ! grep -Eq "attenuationDb|DEFAULT_DB|MIN_DB|MAX_DB" "$MAIN"
+          ! grep -Eq "attenuationDb|DEFAULT_DB|MIN_DB|MAX_DB" "$SERVICE"
+
+          test "$(find "$APP/src/main/java/com/gustavo/reproductorsueno" -maxdepth 1 -name '*.java' | wc -l)" -eq 2
+
+          python3 - <<'PY'
+          from pathlib import Path
+          service = Path('AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java').read_text()
+          born_silent = service.index('newPlayer.setVolume(0f, 0f)')
+          datasource = service.index('newPlayer.setDataSource')
+          apply_before = service.index('applyVolumeBeforePlayback();', datasource)
+          start = service.index('mp.start();', apply_before)
+          assert born_silent < datasource < apply_before < start
+          assert 'volumePercent / 100f' in service
+          main = Path('AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java').read_text()
+          assert 'volumeBar.setMax(MAX_VOLUME_PERCENT)' in main
+          assert 'applyVolume(volumePercent + delta)' in main
+          assert 'BETA 0.12' in main
+          PY
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Restore stable beta signing key
+        run: base64 --decode AndroidSleepPlayer/direct/radioenlace-beta.keystore.b64 > AndroidSleepPlayer/direct/radioenlace-beta.keystore
+
+      - name: Configure Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build clean APK
+        working-directory: AndroidSleepPlayer/direct
+        run: gradle clean :app:assembleDebug --stacktrace
+
+      - name: Prepare and verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf AndroidSleepPlayer/dist
+          mkdir -p AndroidSleepPlayer/dist
+          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk \
+             AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.12.apk
+          unzip -t AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.12.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose \
+             AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.12.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging \
+             AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.12.apk | grep "versionCode='12'.*versionName='0.12'"
+          sha256sum AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.12.apk \
+             > AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.12.sha256
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReproductorMusica-Beta-0.12
+          path: |
+            AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.12.apk
+            AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.12.sha256
+          if-no-files-found: error
