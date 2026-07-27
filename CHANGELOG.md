@@ -1,5 +1,17 @@
 # Historial de cambios
 
+## 4.12.3 beta
+
+- El balance conserva el volumen maestro en lugar de elevarlo al 100 %.
+- El balance atenúa correctamente el canal izquierdo o derecho.
+- La perilla del balance adopta el diseño de la perilla de avance.
+- El centro del balance se marca en amarillo fuerte, la izquierda en azul intenso y la derecha en rojo intenso.
+- Nuevo menú `Ver > Apariencia` con color, intensidad, fondo y contraste, vista previa inmediata y valores persistentes.
+- Apariencia unificada en el reproductor, el panel de volumen y la configuración por voz.
+- Esquinas redondeadas mediante la integración visual nativa de Windows 11.
+- Los colores funcionales de estado, advertencia y nivel permanecen fijos para no perder significado.
+- Prueba automática para impedir regresiones en el cálculo estéreo.
+
 ## 4.12.2 beta
 
 - Preparación del proyecto público y reproducible.
