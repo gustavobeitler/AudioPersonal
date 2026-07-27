@@ -508,7 +508,8 @@ namespace AudioPersonal
         public PlayerForm(InternalPlayerEngine engine)
         {
             this.engine = engine; Text = "Audio Personal — Reproductor";AutoScaleMode=AutoScaleMode.None;ClientSize = new Size(790, 640);StartPosition = FormStartPosition.Manual;FormBorderStyle=FormBorderStyle.FixedSingle;MaximizeBox=false;
-            BackColor = Color.FromArgb(25, 28, 31); ForeColor = Color.Gainsboro; Font = new Font("Segoe UI", 9F); Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            Font = new Font("Segoe UI", 9F); Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            MainMenu viewMenu=new MainMenu();MenuItem view=new MenuItem("Ver");view.MenuItems.Add(new MenuItem("Apariencia...",delegate{using(AppearanceForm dialog=new AppearanceForm())dialog.ShowDialog(this);}));viewMenu.MenuItems.Add(view);Menu=viewMenu;
             title.SetBounds(18, 12, 714, 36); title.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;title.Font = new Font("Segoe UI", 13F, FontStyle.Bold); title.TextAlign = ContentAlignment.MiddleCenter; title.ForeColor = Color.FromArgb(126, 230, 145);
             compactButton.Text="▣";compactButton.SetBounds(742,15,30,28);compactButton.Anchor=AnchorStyles.Top|AnchorStyles.Right;compactButton.Click+=delegate{SetCompact(!compactMode,true);EventHandler handler=CompactModeChanged;if(handler!=null)handler(this,EventArgs.Empty);};
             meter.SetBounds(18, 52, 754, 34);meter.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;
@@ -559,9 +560,10 @@ namespace AudioPersonal
             Controls.AddRange(new Control[] { title,compactButton,meter, position, time, previous, play, stop, next, shuffle, addFiles, addFolder, open, playlistActions, list, equalizer, eqToggle, bass, treble, reset, remove, clear, eqValue, hint });
             detailControls.AddRange(new Control[]{addFiles,addFolder,open,playlistActions,list,equalizer,eqToggle,bass,treble,reset,remove,clear,eqValue,hint});
             foreach (Control control in Controls) if (control is Button) StyleButton((Button)control);
+            AppearanceManager.Changed+=AppearanceChanged;ApplyAppearance();
             engine.StateChanged += EngineChanged; engine.PlaylistChanged += EnginePlaylistChanged; engine.Error += EngineError;
             timer.Interval = 180; timer.Tick += delegate { RefreshState(); }; timer.Start(); RefreshPlaylist(); RefreshState();
-            VisibleChanged += delegate { timer.Enabled = Visible;if(Visible){RefreshPlaylist();RefreshState();} };
+            VisibleChanged += delegate { timer.Enabled = Visible;if(Visible){AppearanceManager.ApplyRounded(this);RefreshPlaylist();RefreshState();} };
             AllowDrop=true;DragEnter+=PlayerDragEnter;DragDrop+=PlayerDragDrop;
             FormClosing += delegate(object sender, FormClosingEventArgs e) { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); } };
             int savedCompact=0;try{savedCompact=Convert.ToInt32(Registry.GetValue(@"HKEY_CURRENT_USER\Software\AudioPersonal","PlayerCompact",0));}catch{}SetCompact(savedCompact==1,false);
@@ -569,7 +571,15 @@ namespace AudioPersonal
 
         Button NewButton(string text, int x, int y, int width, EventHandler click) { Button button = new Button(); button.Text = text; button.SetBounds(x, y, width, 36); button.Click += click; return button; }
         Label NewLabel(string text, int x, int y, int width, int height) { Label label = new Label(); label.Text = text; label.SetBounds(x, y, width, height); Controls.Add(label); return label; }
-        void StyleButton(Button button) { button.FlatStyle = FlatStyle.Flat; button.FlatAppearance.BorderColor = Color.FromArgb(85, 95, 100); button.BackColor = Color.FromArgb(43, 48, 52); button.ForeColor = Color.WhiteSmoke; }
+        void StyleButton(Button button) { AppearanceManager.StyleButton(button,AppearanceManager.Palette); }
+        void AppearanceChanged(object sender,EventArgs e){ApplyAppearance();}
+        void ApplyAppearance()
+        {
+            AppearancePalette palette=AppearanceManager.Palette;BackColor=palette.Background;ForeColor=palette.Text;title.ForeColor=palette.Accent;list.BackColor=palette.Dark?Darken(palette.Background,18):Darken(palette.Background,7);list.ForeColor=palette.Text;
+            foreach(Control control in Controls){Button button=control as Button;if(button!=null)AppearanceManager.StyleButton(button,palette);else if(control is Label||control is CheckBox){control.BackColor=palette.Background;control.ForeColor=palette.Text;}}
+            Invalidate(true);
+        }
+        static Color Darken(Color color,int amount){return Color.FromArgb(Math.Max(0,color.R-amount),Math.Max(0,color.G-amount),Math.Max(0,color.B-amount));}
         public void ApplyCompact(bool compact,bool save){SetCompact(compact,save);}
         void SetCompact(bool compact,bool save){compactMode=compact;foreach(Control control in detailControls)control.Visible=!compact;MinimumSize=Size.Empty;MaximumSize=Size.Empty;ClientSize=compact?new Size(560,185):new Size(790,640);compactButton.Text=compact?"□":"▣";MinimumSize=MaximumSize=Size;if(save)try{using(RegistryKey key=Registry.CurrentUser.CreateSubKey(@"Software\AudioPersonal"))key.SetValue("PlayerCompact",compact?1:0);}catch{}Rectangle area=Screen.FromControl(this).WorkingArea;Location=new Point(Math.Max(area.Left,Math.Min(Left,area.Right-Width)),Math.Max(area.Top,Math.Min(Top,area.Bottom-Height)));}
 
@@ -577,9 +587,10 @@ namespace AudioPersonal
         {
             if (IsDisposed) return; refreshing = true;
             title.Text = engine.CurrentTitle; play.Text = engine.IsPlaying ? "❚❚" : "▶"; shuffle.Checked = engine.Shuffle;
-            eqToggle.BackColor = engine.EqualizerEnabled ? Color.FromArgb(42, 112, 65) : Color.FromArgb(43, 48, 52);
-            bass.BackColor = engine.MegaBass ? Color.FromArgb(38, 116, 162) : Color.FromArgb(43, 48, 52); bass.Text = engine.MegaBass ? "MEGABASS ●" : "MEGABASS";
-            treble.BackColor = engine.CrystalTreble ? Color.FromArgb(155, 98, 30) : Color.FromArgb(43, 48, 52); treble.Text = engine.CrystalTreble ? "CRYSTAL TREBLE ●" : "CRYSTAL TREBLE";
+            Color inactive=AppearanceManager.Palette.Surface;
+            eqToggle.BackColor = engine.EqualizerEnabled ? Color.FromArgb(42, 112, 65) : inactive;
+            bass.BackColor = engine.MegaBass ? Color.FromArgb(38, 116, 162) : inactive; bass.Text = engine.MegaBass ? "MEGABASS ●" : "MEGABASS";
+            treble.BackColor = engine.CrystalTreble ? Color.FromArgb(155, 98, 30) : inactive; treble.Text = engine.CrystalTreble ? "CRYSTAL TREBLE ●" : "CRYSTAL TREBLE";
             for (int index = 0; index < bands.Length; index++) bands[index].Value = (int)Math.Round(engine.GetEqGain(index));
             TimeSpan elapsed = engine.Position, duration = engine.Duration; time.Text = FormatTime(elapsed) + " / " + FormatTime(duration);
             if (!seeking) position.Value = duration.TotalMilliseconds <= 0 ? 0 : Math.Max(0, Math.Min(1000, (int)(elapsed.TotalMilliseconds * 1000 / duration.TotalMilliseconds)));
@@ -654,7 +665,7 @@ namespace AudioPersonal
         void EngineChanged(object sender, EventArgs e) { if (IsHandleCreated) try { BeginInvoke((MethodInvoker)RefreshState); } catch { } }
         void EnginePlaylistChanged(object sender, EventArgs e) { if (IsHandleCreated) try { BeginInvoke((MethodInvoker)RefreshPlaylist); } catch { } }
         void EngineError(object sender, string message) { if (IsHandleCreated) try { BeginInvoke((MethodInvoker)delegate { MessageBox.Show(this, message, "Audio Personal", MessageBoxButtons.OK, MessageBoxIcon.Warning); }); } catch { } }
-        protected override void Dispose(bool disposing) { if (disposing) { timer.Dispose(); engine.StateChanged -= EngineChanged; engine.PlaylistChanged -= EnginePlaylistChanged; engine.Error -= EngineError; } base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing) { timer.Dispose(); engine.StateChanged -= EngineChanged; engine.PlaylistChanged -= EnginePlaylistChanged; engine.Error -= EngineError;AppearanceManager.Changed-=AppearanceChanged; } base.Dispose(disposing); }
     }
 
     sealed class PlayerLevelMeter : Control
