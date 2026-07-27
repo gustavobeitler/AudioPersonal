@@ -91,10 +91,10 @@ namespace AudioPersonal
         static Color FromHsl(double h,double s,double l)
         {
             h=((h%360)+360)%360/360.0;s=Math.Max(0,Math.Min(1,s));l=Math.Max(0,Math.Min(1,l));double r=l,g=l,b=l;
-            if(s>0){double q=l<.5?l*(1+s):l+s-l*s,p=2*l-q;r=Hue(p,q,h+1.0/3);g=Hue(p,q,h);b=Hue(p,q,h-1.0/3);}
+            if(s>0){double q=l<.5?l*(1+s):l+s-l*s,p=2*l-q;r=HuePart(p,q,h+1.0/3);g=HuePart(p,q,h);b=HuePart(p,q,h-1.0/3);}
             return Color.FromArgb((int)Math.Round(r*255),(int)Math.Round(g*255),(int)Math.Round(b*255));
         }
-        static double Hue(double p,double q,double t){if(t<0)t+=1;if(t>1)t-=1;if(t<1.0/6)return p+(q-p)*6*t;if(t<.5)return q;if(t<2.0/3)return p+(q-p)*(2.0/3-t)*6;return p;}
+        static double HuePart(double p,double q,double t){if(t<0)t+=1;if(t>1)t-=1;if(t<1.0/6)return p+(q-p)*6*t;if(t<.5)return q;if(t<2.0/3)return p+(q-p)*(2.0/3-t)*6;return p;}
         public static void ApplyRounded(Form form)
         {
             if(form==null||!form.IsHandleCreated)return;
