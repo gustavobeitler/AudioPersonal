@@ -36,8 +36,8 @@ jobs:
           SERVICE="$APP/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java"
           MANIFEST="$APP/src/main/AndroidManifest.xml"
 
-          sed -i "s/versionCode 10/versionCode 12/" "$APP/build.gradle"
-          sed -i "s/versionName '0.10'/versionName '0.12'/" "$APP/build.gradle"
+          sed -i "s/versionCode 11/versionCode 12/" "$APP/build.gradle"
+          sed -i "s/versionName '0.11'/versionName '0.12'/" "$APP/build.gradle"
 
           grep -q "versionCode 12" "$APP/build.gradle"
           grep -q "versionName '0.12'" "$APP/build.gradle"
