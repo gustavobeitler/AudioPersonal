@@ -348,7 +348,7 @@ namespace AudioPersonal
                 Button button=control as Button;if(button!=null){AppearanceManager.StyleButton(button,palette);continue;}
                 control.ForeColor=palette.Text;if(control is Label||control is CheckBox)control.BackColor=palette.Background;
                 else if(control is TextBox||control is ComboBox){control.BackColor=palette.Surface;control.ForeColor=palette.Text;AppearanceManager.ApplyRoundedControl(control,8);}
-                if(control is Label&&control.BorderStyle!=BorderStyle.None)AppearanceManager.ApplyRoundedControl(control,10);
+                Label label=control as Label;if(label!=null&&label.BorderStyle!=BorderStyle.None)AppearanceManager.ApplyRoundedControl(label,10);
             }
             Invalidate(true);
         }
