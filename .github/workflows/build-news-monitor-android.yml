@@ -7,6 +7,12 @@ on:
     paths:
       - "android-news-monitor/**"
       - ".github/workflows/build-news-monitor-android.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "android-news-monitor/**"
+      - ".github/workflows/build-news-monitor-android.yml"
   workflow_dispatch:
 
 permissions:
