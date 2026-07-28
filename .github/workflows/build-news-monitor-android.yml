@@ -1,0 +1,55 @@
+name: Compilar Monitor de Noticias Android
+
+on:
+  push:
+    branches:
+      - monitor-noticias-android-beta
+    paths:
+      - "android-news-monitor/**"
+      - ".github/workflows/build-news-monitor-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v4
+
+      - name: Preparar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Preparar Android SDK 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Compilar APK
+        run: gradle -p android-news-monitor clean assembleDebug --no-daemon --stacktrace
+
+      - name: Preparar entrega
+        run: |
+          cp android-news-monitor/app/build/outputs/apk/debug/app-debug.apk Monitor-de-Noticias-1.0-beta.apk
+          ${ANDROID_HOME}/build-tools/35.0.0/apksigner verify --verbose --print-certs Monitor-de-Noticias-1.0-beta.apk
+          test -s Monitor-de-Noticias-1.0-beta.apk
+
+      - name: Publicar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Monitor-de-Noticias-1.0-beta
+          path: Monitor-de-Noticias-1.0-beta.apk
+          if-no-files-found: error
+          retention-days: 30
