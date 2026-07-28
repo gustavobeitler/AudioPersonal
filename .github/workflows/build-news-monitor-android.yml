@@ -38,18 +38,14 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Preparar Android SDK 35
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
       - name: Compilar APK
         run: gradle -p android-news-monitor clean assembleDebug --no-daemon --stacktrace
 
       - name: Preparar entrega
         run: |
           cp android-news-monitor/app/build/outputs/apk/debug/app-debug.apk Monitor-de-Noticias-1.0-beta.apk
-          ${ANDROID_HOME}/build-tools/35.0.0/apksigner verify --verbose --print-certs Monitor-de-Noticias-1.0-beta.apk
+          APKSIGNER=$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs Monitor-de-Noticias-1.0-beta.apk
           test -s Monitor-de-Noticias-1.0-beta.apk
 
       - name: Publicar APK
