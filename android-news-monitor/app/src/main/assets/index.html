@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <title>Monitor de Noticias</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon" aria-hidden="true">N</div>
+      <div>
+        <h1>Monitor de Noticias</h1>
+        <p id="lastUpdate">Preparando fuentes…</p>
+      </div>
+    </div>
+    <button class="icon-button" id="settingsButton" aria-label="Configuración">⚙</button>
+  </header>
+
+  <main>
+    <section class="control-card">
+      <div class="control-row">
+        <label for="timeWindow">Mostrar noticias de</label>
+        <select id="timeWindow">
+          <option value="1">la última hora</option>
+          <option value="3">las últimas 3 horas</option>
+          <option value="6">las últimas 6 horas</option>
+          <option value="12">las últimas 12 horas</option>
+          <option value="24">las últimas 24 horas</option>
+          <option value="72">los últimos 3 días</option>
+        </select>
+      </div>
+      <div class="actions-row">
+        <button class="primary-button" id="refreshButton"><span id="refreshIcon">↻</span> Actualizar ahora</button>
+        <button class="secondary-button" id="keywordsButton">Palabras clave <span id="keywordCount" class="badge">0</span></button>
+      </div>
+      <label class="switch-row">
+        <input type="checkbox" id="keywordFilter" checked>
+        <span class="switch"></span>
+        <span>Mostrar únicamente coincidencias con palabras clave</span>
+      </label>
+    </section>
+
+    <section class="status-card" id="statusCard">
+      <div class="pulse" id="statusPulse"></div>
+      <div class="status-copy">
+        <strong id="statusTitle">Listo para revisar</strong>
+        <span id="statusDetail">La actualización automática se realiza cada cinco minutos mientras la app está abierta.</span>
+      </div>
+    </section>
+
+    <section class="summary-row" id="summaryRow">
+      <div><strong id="visibleCount">0</strong><span>visibles</span></div>
+      <div><strong id="foundCount">0</strong><span>encontradas</span></div>
+      <div><strong id="sourceCount">0</strong><span>fuentes activas</span></div>
+    </section>
+
+    <section id="keywordStrip" class="keyword-strip hidden"></section>
+
+    <section id="newsList" class="news-list" aria-live="polite">
+      <div class="empty-state">
+        <div class="empty-icon">⌁</div>
+        <h2>Buscando titulares recientes</h2>
+        <p>Los resultados aparecerán aquí, ordenados desde el más nuevo.</p>
+      </div>
+    </section>
+  </main>
+
+  <button class="floating-refresh" id="floatingRefresh" aria-label="Actualizar">↻</button>
+
+  <div class="modal hidden" id="settingsModal" role="dialog" aria-modal="true">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div><h2>Fuentes de noticias</h2><p>Activa, agrega o elimina medios.</p></div>
+        <button class="close-button" data-close="settingsModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="sourcesList" class="sources-list"></div>
+        <button class="outline-button full" id="addSourceButton">＋ Agregar una fuente RSS</button>
+        <button class="text-button full" id="restoreSourcesButton">Restablecer fuentes predeterminadas</button>
+      </div>
+      <div class="modal-footer">
+        <button class="primary-button full" data-close="settingsModal">Guardar y actualizar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="keywordsModal" role="dialog" aria-modal="true">
+    <div class="modal-panel compact">
+      <div class="modal-header">
+        <div><h2>Palabras clave</h2><p>La app buscará cualquiera de estas expresiones.</p></div>
+        <button class="close-button" data-close="keywordsModal">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="keywordForm" class="input-row">
+          <input id="keywordInput" maxlength="60" placeholder="Ej.: Israel, atentado, Netanyahu" autocomplete="off">
+          <button class="primary-button" type="submit">Agregar</button>
+        </form>
+        <div id="keywordsList" class="chips-editor"></div>
+        <p class="helper">Sin palabras clave, se muestran todos los titulares del período elegido.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="primary-button full" data-close="keywordsModal">Aplicar filtro</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="sourceModal" role="dialog" aria-modal="true">
+    <div class="modal-panel compact">
+      <div class="modal-header">
+        <div><h2>Agregar fuente</h2><p>Introduce el nombre y la dirección RSS o Atom.</p></div>
+        <button class="close-button" data-close="sourceModal">×</button>
+      </div>
+      <form id="sourceForm">
+        <div class="modal-body form-stack">
+          <label>Nombre del medio<input id="sourceName" maxlength="80" required placeholder="Nombre de la fuente"></label>
+          <label>Dirección RSS<input id="sourceUrl" type="url" required placeholder="https://ejemplo.com/rss.xml"></label>
+        </div>
+        <div class="modal-footer split">
+          <button class="secondary-button" type="button" data-close="sourceModal">Cancelar</button>
+          <button class="primary-button" type="submit">Agregar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <template id="newsTemplate">
+    <article class="news-card">
+      <div class="news-meta"><span class="source-pill"></span><time></time></div>
+      <h2 class="translated-title"></h2>
+      <p class="original-title"></p>
+      <p class="news-summary"></p>
+      <div class="news-actions">
+        <button class="open-button">Abrir original</button>
+        <button class="translate-button">Abrir traducida</button>
+        <button class="share-button" aria-label="Compartir">↗</button>
+      </div>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
