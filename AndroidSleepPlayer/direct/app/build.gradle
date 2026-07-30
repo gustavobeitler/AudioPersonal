@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.gustavo.reproductorsueno'
+    compileSdk 35
+
+    signingConfigs {
+        beta {
+            storeFile rootProject.file('radioenlace-beta.keystore')
+            storePassword 'android'
+            keyAlias 'radioenlacebeta'
+            keyPassword 'android'
+        }
+    }
+
+    defaultConfig {
+        applicationId 'com.gustavo.reproductorsueno'
+        minSdk 28
+        targetSdk 35
+        versionCode 10
+        versionName '0.10'
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.beta
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.viewpager2:viewpager2:1.1.0'
+}

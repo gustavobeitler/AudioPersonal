@@ -1,0 +1,231 @@
+name: Build Reproductor Sueno APK
+
+on:
+  pull_request:
+    paths:
+      - 'AndroidSleepPlayer/**'
+      - '.github/workflows/build-android-sleep-player.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout de la rama beta
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Aplicar fuente consolidada Beta 0.7
+        shell: bash
+        run: |
+          cat > /tmp/beta07-source.tar.gz.b64 <<'BETA07_SOURCE'
+          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
+          /2UNAAA=
+          BETA07_SOURCE
+          base64 --decode /tmp/beta07-source.tar.gz.b64 > /tmp/beta07-source.tar.gz
+          echo "2cbed9259f512ab19b0b44da0981bca100801f98769e5eaa13f2dd6a3677b42b  /tmp/beta07-source.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/beta07-source.tar.gz -C "$GITHUB_WORKSPACE"
+          rm -f /tmp/beta07-source.tar.gz /tmp/beta07-source.tar.gz.b64
+
+      - name: Verificar estructura limpia
+        shell: bash
+        run: |
+          test -f AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
+          test -f AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
+          test ! -f AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivityV04.java
+          test ! -f AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackServiceV04.java
+          test ! -f AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/HeadphoneProfileRepositoryV04.java
+          grep -q "versionCode 7" AndroidSleepPlayer/direct/app/build.gradle
+          grep -q "versionName '0.7'" AndroidSleepPlayer/direct/app/build.gradle
+          grep -q "class LocalBinder" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java
+          grep -q "bindService" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
+          grep -q "playFromClient" AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Restore stable beta signing key
+        run: base64 --decode AndroidSleepPlayer/direct/radioenlace-beta.keystore.b64 > AndroidSleepPlayer/direct/radioenlace-beta.keystore
+
+      - name: Package source snapshot
+        run: |
+          tar --exclude='AndroidSleepPlayer/direct/.gradle' \
+              --exclude='AndroidSleepPlayer/direct/app/build' \
+              --exclude='AndroidSleepPlayer/direct/radioenlace-beta.keystore' \
+              -czf AndroidSleepPlayer/source-snapshot-beta-0.7.tar.gz \
+              AndroidSleepPlayer/direct \
+              AndroidSleepPlayer/ROADMAP.md
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReproductorMusica-Beta-0.7-source
+          path: AndroidSleepPlayer/source-snapshot-beta-0.7.tar.gz
+          if-no-files-found: error
+
+      - name: Configure Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build debug APK
+        id: apkbuild
+        continue-on-error: true
+        working-directory: AndroidSleepPlayer/direct
+        run: |
+          set -o pipefail
+          gradle clean :app:assembleDebug --stacktrace 2>&1 | tee build-beta-0.7.log
+
+      - name: Upload compiler log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReproductorMusica-Beta-0.7-build-log
+          path: AndroidSleepPlayer/direct/build-beta-0.7.log
+          if-no-files-found: error
+
+      - name: Stop on compiler error
+        if: steps.apkbuild.outcome == 'failure'
+        run: exit 1
+
+      - name: Guardar fuente consolidada
+        shell: bash
+        run: |
+          git config user.name "RadioEnlace Build"
+          git config user.email "actions@users.noreply.github.com"
+          git add AndroidSleepPlayer/direct/app/build.gradle \
+                  AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/MainActivity.java \
+                  AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/PlaybackService.java \
+                  AndroidSleepPlayer/direct/app/src/main/java/com/gustavo/reproductorsueno/HeadphoneProfileRepository.java
+          if ! git diff --cached --quiet; then
+            git commit -m "Beta 0.7: reproducción estable y servicio enlazado [skip ci]"
+            BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+            git push origin "HEAD:$BRANCH"
+          fi
+
+      - name: Prepare APK
+        run: |
+          rm -rf AndroidSleepPlayer/dist
+          mkdir -p AndroidSleepPlayer/dist
+          cp AndroidSleepPlayer/direct/app/build/outputs/apk/debug/app-debug.apk AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.7.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReproductorMusica-Beta-0.7
+          path: AndroidSleepPlayer/dist/ReproductorMusica_Beta_0.7.apk
+          if-no-files-found: error
