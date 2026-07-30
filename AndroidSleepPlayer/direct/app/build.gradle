@@ -1,0 +1,36 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.gustavo.reproductorsueno'
+    compileSdk 35
+
+    signingConfigs {
+        beta {
+            storeFile rootProject.file('radioenlace-beta.keystore')
+            storePassword 'android'
+            keyAlias 'radioenlacebeta'
+            keyPassword 'android'
+        }
+    }
+
+    defaultConfig {
+        applicationId 'com.gustavo.reproductorsueno'
+        minSdk 28
+        targetSdk 35
+        versionCode 11
+        versionName '0.11'
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.beta
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
