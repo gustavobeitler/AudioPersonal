@@ -1,0 +1,13 @@
+name: Comprobar ejecutor público
+on:
+  push:
+    branches: [agent/public-runner-check]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo EJECUTOR_PUBLICO_OK
