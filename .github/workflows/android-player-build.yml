@@ -1,4 +1,4 @@
-name: Compilar Reproductor Android 0.2
+name: Compilar Reproductor Android 0.3
 
 on:
   push:
@@ -21,12 +21,21 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Reconstruir proyecto Android 0.2
+      - name: Reconstruir base funcional 0.2
         run: |
           base64 --decode android-player/ReproductorClasico_0.1.tar.gz.b64 > /tmp/ReproductorClasico_0.1.tar.gz
           tar -xzf /tmp/ReproductorClasico_0.1.tar.gz
           mv ReproductorClasico_0.1 ReproductorClasico_0.2
           python3 android-player/preparar_0_2.py
+
+      - name: Aplicar diseño RadioEnlace 0.3
+        run: |
+          mv ReproductorClasico_0.2 ReproductorClasico_0.3
+          base64 --decode android-player/reproductor_0.3_design_overlay.tar.gz.b64 > /tmp/reproductor_0.3_design_overlay.tar.gz
+          tar -xzf /tmp/reproductor_0.3_design_overlay.tar.gz -C ReproductorClasico_0.3
+          sed -i "s/versionCode 2/versionCode 3/; s/versionName '0.2'/versionName '0.3'/" ReproductorClasico_0.3/app/build.gradle
+          sed -i 's/Versión 0.2/Versión 0.3/g' ReproductorClasico_0.3/app/src/main/java/com/gustavobeitler/reproductorclasico/MainActivity.java
+          sed -i 's/0.2/0.3/g' ReproductorClasico_0.3/README.md
 
       - name: Preparar Java 17
         uses: actions/setup-java@v4
@@ -46,17 +55,17 @@ jobs:
           gradle-version: "8.13"
 
       - name: Compilar APK
-        working-directory: ReproductorClasico_0.2
+        working-directory: ReproductorClasico_0.3
         run: gradle --no-daemon assembleDebug
 
       - name: Preparar entrega
         run: |
           mkdir -p entrega
-          cp ReproductorClasico_0.2/app/build/outputs/apk/debug/app-debug.apk entrega/Reproductor_Clasico_0.2.apk
+          cp ReproductorClasico_0.3/app/build/outputs/apk/debug/app-debug.apk entrega/Reproductor_Clasico_0.3.apk
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Reproductor_Clasico_0.2
-          path: entrega/Reproductor_Clasico_0.2.apk
+          name: Reproductor_Clasico_0.3
+          path: entrega/Reproductor_Clasico_0.3.apk
           if-no-files-found: error
