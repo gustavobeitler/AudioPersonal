@@ -37,6 +37,13 @@ jobs:
           sed -i 's/Versión 0.2/Versión 0.3/g' ReproductorClasico_0.3/app/src/main/java/com/gustavobeitler/reproductorclasico/MainActivity.java
           sed -i 's/0.2/0.3/g' ReproductorClasico_0.3/README.md
 
+      - name: Publicar fuente reconstruida 0.3
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reproductor_Clasico_0.3_fuente
+          path: ReproductorClasico_0.3
+          if-no-files-found: error
+
       - name: Preparar Java 17
         uses: actions/setup-java@v4
         with:
