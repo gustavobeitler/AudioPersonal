@@ -1,0 +1,13 @@
+name: Diagnostico Actions publico
+
+on:
+  push:
+    branches: [diagnostico-actions-temporal]
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirmar runner publico
+        run: echo "PUBLIC_ACTIONS_OK"
