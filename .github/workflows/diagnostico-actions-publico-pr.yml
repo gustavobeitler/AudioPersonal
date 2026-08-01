@@ -1,0 +1,13 @@
+name: Diagnostico Actions publico PR
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirmar runner publico
+        run: echo "PUBLIC_ACTIONS_OK"
